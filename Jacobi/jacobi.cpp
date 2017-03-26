@@ -304,16 +304,36 @@ void initialize_data(Matrix1D *data) {
     data->set(Point(size - 1), 1.0);
 }
 
+void initialize_data_1d(float *data) {
+    // Left
+    data[0] = 1.0;
+    // Right
+    data[size-1] = 1.0;
+}
+
 void initialize_data(Matrix2D *data) {
     for (int i = 0; i < size; i++) {
         // Top Row
-        data.set(Point(i, 0), 1.0);
-        // Bottom Row
-        data.set(Point(i, size - 1), 1.0);
-        // Left Column
         data.set(0, i, 1.0);
-        // Right Column
+        // Bottom Row
         data.set(size - 1, i, 1.0);
+        // Left Column
+        data.set(Point(i, 0), 1.0);
+        // Right Column
+        data.set(Point(i, size - 1), 1.0);
+    }
+}
+
+void initialize_data_2d(float *data) {
+    for (int i = 0; i < size; i++) {
+        // Top Row
+        data[i] = 1.0;
+        // Bottom Row
+        data[(size - 1) * size + i] = 1.0;
+        // Left Column
+        data[i * size] = 1.0;
+        // Right Column
+        data[i * size + size - 1] = 1.0;
     }
 }
 
@@ -336,19 +356,43 @@ void initialize_data(Matrix3D *data) {
     }
 }
 
+void initialize_data_3d(float *data) {
+    for (int i = 0; i < size; i++) {
+        for (int j = 0; j < size; j++) {
+            // Face 1: X = 0 Plane
+            data[i * size + j] = 1.0;
+            // Face 2: X = N Plane
+            data[(size - 1) * size * size + i * size + j] = 1.0;
+            // Face 3: Y = 0 Plane
+            data[i * size * size + j] = 1.0;
+            // Face 4: Y = N Plane
+            data[i * size * size + (size - 1) * size + j] = 1.0;
+            // Face 5: Z = 0 Plane
+            data[i * size * size + j * size] = 1.0;
+            // Face 6: Z = N Plane
+            data[i * size * size + j * size + size - 1] = 1.0;
+        }
+    }
+}
+
 
 int main(int argc, char *argv[]) {
     parse_arguments(argc, argv);
+    Matrix data;
+    float* arr_data;
 
     switch (dimensions) {
         case 1:
-            Matrix1D data = new Matrix1D();
+            data = new Matrix1D();
+            arr_data = new float[size];
             break;
         case 2:
-            Matrix2D data = new Matrix2D();
+            data = new Matrix2D();
+            arr_data = new float[size*size];
             break;
         case 3:
-            Matrix3D data = new Matrix3D();
+            data = new Matrix3D();
+            arr_data = new float[size*size*size];
             break;
     }
 
@@ -356,6 +400,20 @@ int main(int argc, char *argv[]) {
 
     if (sequential) {
         jacobi_sequential(&data);
+        switch (dimensions) {
+            case 1:
+                initialize_data_1d(&arr_data);
+                jacobi1d_sequential(&arr_data);
+                break;
+            case 2:
+                initialize_data_2d(&arr_data);
+                jacobi2d_sequential(&arr_data);
+                break;
+            case 3:
+                initialize_data_3d(&arr_data);
+                jacobi3d_sequential(&arr_data);
+                break;
+        }
     } else {
         // Add CUDA calls
     }
