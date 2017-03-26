@@ -19,129 +19,137 @@ int size = 1024, dimensions = 2;
 // Run attributes
 int gridSize = 1, blockSize = 16, iterations = 1000;
 
-virtual struct Matrix {
-    virtual float adjacent_sum();
+struct Point {
+    int i, j, k;
 
-    virtual int adjacent_count();
+    Point(int i = 0, int j = 0, int k = 0) {
+        this.i = i;
+        this.j = j;
+        this.k = k;
+    }
+};
+
+virtual struct Matrix {
+    virtual float adjacent_sum(Point point);
 };
 
 struct Matrix1D : Matrix {
     float *data = new float[size];
 
-    void set(i, value) {
-        data[i] = value;
+    void set(Point point, value) {
+        data[point.i] = value;
     }
 
-    float get(i) {
+    float get(Point point) {
+        return data[point.i];
+    }
+
+    float get(int i) {
         return data[i];
     }
 
-    float self(i) {
-        return get(i);
+    float self(Point point) {
+        return get(point.i);
     }
 
-    virtual float adjacent_sum(i) {
-        return left(i) + right(i);
+    virtual float adjacent_sum(Point point) {
+        return left(point) + right(point);
     }
 
-    virtual int adjacent_count(i) {
-        return 2;
+    float left(Point point) {
+        return get(point.i - 1);
     }
 
-    float left(i) {
-        return get(i - 1);
-    }
-
-    float right(i) {
-        return get(i + 1);
+    float right(Point point) {
+        return get(point.i + 1);
     }
 };
 
 struct Matrix2D {
     float *data = new float[size * size];
 
-    void set(i, j, value) {
-        data[i * size + j] = value;
+    void set(Point point, value) {
+        data[point.i * size + point.j] = value;
     }
 
-    float get(i, j) {
+    float get(Point point) {
+        return data[point.i * size + point.j];
+    }
+
+    float get(int i, int j) {
         return data[i * size + j];
     }
 
-    float self(i, j) {
-        return get(i, j);
+    float self(Point point) {
+        return get(point.i, point.j);
     }
 
-    virtual float adjacent_sum(i, j) {
-        return left(i, j) + right(i, j) + up(i, j) + down(i, j);
+    virtual float adjacent_sum(Point point) {
+        return left(point) + right(point) + up(point) + down(point);
     }
 
-    virtual int adjacent_count(i) {
-        return 4;
+    float left(Point point) {
+        return get(point.i, point.j - 1);
     }
 
-    float left(i, j) {
-        return get(i, j - 1);
+    float right(Point point) {
+        return get(point.i, point.j + 1);
     }
 
-    float right(i, j) {
-        return get(i, j + 1);
+    float up(Point point) {
+        return get(point.i - 1, point.j);
     }
 
-    float up(i, j) {
-        return get(i - 1, j);
-    }
-
-    float down(i, j) {
-        return get(i + 1, j);
+    float down(Point point) {
+        return get(point.i + 1, point.j);
     }
 };
 
 struct Matrix3D {
     float *data = new float[size * size * size];
 
-    void set(i, j, k, value) {
+    void set(Point point, value) {
         data[i * size * size + j * size + k] = value;
     }
 
-    float get(i, j, k) {
+    float get(Point point) {
+        return get(point.i, point.j, point.k);
+    }
+
+    float get(int i, int j, int k) {
         return data[i * size * size + j * size + k];
     }
 
-    float self(i, j, k) {
-        return get(i, j, k);
+    float self(Point point) {
+        return get(point);
     }
 
-    virtual float adjacent_sum(i, j, k) {
+    virtual float adjacent_sum(Point point) {
         return left(i, j, k) + right(i, j, k) + up(i, j, k) + down(i, j, k) + away(i, j, k) + toward(i, j, k);
     }
 
-    virtual int adjacent_count(i) {
-        return 6;
+    float up(Point point) {
+        return get(point.i - 1, point.j, point.k);
     }
 
-    float up(i, j, k) {
-        return get(i - 1, j, k);
+    float down(Point point) {
+        return get(point.i + 1, point.j, point.k);
     }
 
-    float down(i, j, k) {
-        return get(i + 1, j, k);
+    float left(Point point) {
+        return get(point.i, point.j - 1, point.k);
     }
 
-    float left(i, j, k) {
-        return get(i, j - 1, k);
+    float right(Point point) {
+        return get(point.i, point.j + 1, point.k);
     }
 
-    float right(i, j, k) {
-        return get(i, j + 1, k);
+    float away(Point point) {
+        return get(point.i, point.j, point.k - 1);
     }
 
-    float away(i, j, k) {
-        return get(i, j, k - 1);
-    }
-
-    float toward(i, j, k) {
-        return get(i, j, k + 1);
+    float toward(Point point) {
+        return get(point.i, point.j, point.k + 1);
     }
 };
 
@@ -215,12 +223,7 @@ bool parse_arguments(int argc, char *argv[]) {
 void jacobi_sequential(Matrix1D *data) {
     for (int t = 0; t < iterations; t++) {
         for (i = 1; i < size - 1; i++) {
-            data->set(i,
-                      (
-                          data->self(i) +
-                          data->left(i) +
-                          data->right(i)
-                      ) / 3);
+            data->set(Point(i), (data->self(i) + data->adjacent_sum(Point(i))) / 3);
         }
     }
 }
@@ -229,15 +232,7 @@ void jacobi_sequential(Matrix2D *data) {
     for (int t = 0; t < iterations; t++) {
         for (int i = 1; i < size - 1; i++) {
             for (int j = 1; j < size - 1; j++) {
-                data->set(i, j,
-                          (
-                              data->self(i, j) +
-                              data->left(i, j) +
-                              data->right(i, j) +
-                              data->up(i, j) +
-                              data->down(i, j)
-                          ) / 5
-                );
+                data->set(Point(i, j), (data->self(Point(i, j)) + data->adjacent_sum(Point(i, j))) / 5);
             }
         }
     }
@@ -248,43 +243,96 @@ void jacobi_sequential(Matrix3D *data) {
         for (int i = 1; i < size - 1; i++) {
             for (int j = 1; j < size - 1; j++) {
                 for (int k = 1; k < size - 1; k++) {
-                    data->set(i, j, k,
-                              (
-                                  data->self(i, j, k) +
-                                  data->up(i, j, k) +
-                                  data->down(i, j, k) +
-                                  data->left(i, j, k) +
-                                  data->right(i, j, k) +
-                                  data->away(i, j, k) +
-                                  data->toward(i, j, k)
-                              ) / 7
-                    );
+                    data->set(Point(i, j, k), (data->self(i, j, k) + data->adjacent_sum(Point(i, j, k))) / 7);
                 }
             }
         }
     }
 }
 
+void jacobi1d_sequential(float *data) {
+    for (int t = 0; t < iterations; t++) {
+        for (i = 1; i < size - 1; i++) {
+            data[i] = (data[i] + data[i - 1] + data[i + 1]) / 3;
+        }
+    }
+}
+
+void jacobi2d_sequential(float *data) {
+    for (int t = 0; t < iterations; t++) {
+        for (int i = 1; i < size - 1; i++) {
+            for (int j = 1; j < size - 1; j++) {
+                data[i * size + j] =
+                    (
+                        data[i * size + j] +
+                        data[(i - 1) * size + j] +
+                        data[(i + 1) * size + j] +
+                        data[i * size + j - 1] +
+                        data[i * size + j + 1]
+                    ) / 5;
+            }
+        }
+    }
+}
+
+void jacobi3d_sequential(float *data) {
+    for (int t = 0; t < iterations; t++) {
+        for (int i = 1; i < size - 1; i++) {
+            for (int j = 1; j < size - 1; j++) {
+                for (int k = 1; k < size - 1; k++) {
+                    data[i * size * size + j * size + k] =
+                        (
+                            data[i * size * size + j * size + k] +
+                            data[(i - 1) * size * size + j * size + k] +
+                            data[(i + 1) * size * size + j * size + k] +
+                            data[i * size * size + (j - 1) * size + k] +
+                            data[i * size * size + (j + 1) * size + k] +
+                            data[i * size * size + j * size + k - 1] +
+                            data[i * size * size + j * size + k + 1]
+                        ) / 7;
+                }
+            }
+        }
+    }
+}
+
+// Data Initialization
 void initialize_data(Matrix1D *data) {
-    data->set(0, 1.0);
-    data->set(size - 1, 1.0);
+    // Left
+    data->set(Point(0), 1.0);
+    // Right
+    data->set(Point(size - 1), 1.0);
 }
 
 void initialize_data(Matrix2D *data) {
     for (int i = 0; i < size; i++) {
-        data.set(i, 0, 1.0);
-        data.set(i, size - 1, 1.0);
+        // Top Row
+        data.set(Point(i, 0), 1.0);
+        // Bottom Row
+        data.set(Point(i, size - 1), 1.0);
+        // Left Column
         data.set(0, i, 1.0);
+        // Right Column
         data.set(size - 1, i, 1.0);
     }
 }
 
 void initialize_data(Matrix3D *data) {
     for (int i = 0; i < size; i++) {
-        data.set(i, 0, 0, 1.0);
-        data.set(i, size - 1, 0, 1.0);
-        data.set(0, i, 1.0);
-        data.set(size - 1, i, 1.0);
+        for (int j = 0; j < size; j++) {
+            // Face 1: X = 0 Plane
+            data.set(Point(0, i, j), 1.0);
+            // Face 2: X = N Plane
+            data.set(Point(size - 1, i, j), 1.0);
+            // Face 3: Y = 0 Plane
+            data.set(Point(i, 0, j), 1.0);
+            // Face 4: Y = N Plane
+            data.set(Point(i, size - 1, j), 1.0);
+            // Face 5: Z = 0 Plane
+            data.set(Point(i, j, 0), 1.0);
+            // Face 6: Z = N Plane
+            data.set(Point(i, j, size - 1), 1.0);
+        }
     }
 }
 
