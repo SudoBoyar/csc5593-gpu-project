@@ -122,7 +122,7 @@ void jacobi3d_sequential(float *data) {
     for (int t = 0; t < iterations; t++) {
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < size; j++) {
-                for (int k = 0; k < size; k++) {
+                for (int k = 1; k < size - 1; k++) {
                     // Include Self
                     //data[i * size * size + j * size + k] =
                     //        (
@@ -258,7 +258,7 @@ void print_matrix(float *data) {
 
 int main(int argc, char *argv[]) {
     parse_arguments(argc, argv);
-    float *data = new float[(int)pow(size, dimensions) * 2];
+    float *data = new float[(int) pow(size, dimensions)];
 
     initialize_data(data);
     if (debug) { print_matrix(data); }
