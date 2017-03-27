@@ -209,6 +209,64 @@ void jacobi_sequential(float *data, float *temp) {
     }
 }
 
+// CUDA Kernels
+
+__global__ void jacobi1d_kernel(float *data) {
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    float tmp = (data[id - 1] + data[id] + data[id + 1]) / 3;
+    __syncthreads();
+    data[id] = tmp;
+}
+
+__global__ void jacobi2d_kernel() {
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    int x = id % size;
+    int y = id / size;
+
+    float tmp =
+        (
+            data[id] +
+            data[y * size + x - 1] +
+            data[y * size + x + 1] +
+            data[(y - 1) * size + x] +
+            data[(y + 1) * size + x]
+        ) / 5;
+    //float tmp = (data[id] + data[id - 1] + data[id + 1] + data[id - size] + data[id + size]) / 5;
+    __syncthreads();
+    data[id] = tmp;
+}
+
+__global__ void jacobi3d_kernel() {
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    int x = id % size;
+    int rem = id / size;
+    int y = rem % size;
+    int z = rem / size;
+
+    float tmp =
+        (
+            data[z * size * size + y * size + x] +
+            data[z * size * size + y * size + x - 1] +
+            data[z * size * size + y * size + x + 1] +
+            data[z * size * size + (y - 1) * size + x] +
+            data[z * size * size + (y + 1) * size + x] +
+            data[(z - 1) * size * size + y * size + x] +
+            data[(z + 1) * size * size + y * size + x]
+        ) / 7;
+    //float tmp =
+    //    (
+    //        data[id] +
+    //        data[id - 1] +
+    //        data[id + 1] +
+    //        data[id - size] +
+    //        data[id + size] +
+    //        data[id - size * size] +
+    //        data[id + size * size]
+    //    ) / 7;
+    __syncthreads();
+    data[id] = tmp;
+}
+
 // Data Initialization
 
 void initialize_data_1d(float *data) {
@@ -335,9 +393,16 @@ int main(int argc, char *argv[]) {
     parse_arguments(argc, argv);
     float *data = new float[alloc_size];
     float *temp = new float[alloc_size];
+    float *d_data, d_temp;
 
     initialize_data(data);
     initialize_data(temp);
+
+    cudaMalloc((void **) &d_data, alloc_size * sizeof(float));
+    //cudaMalloc((void **) &d_temp, alloc_size * sizeof(float));
+
+    cudaMemcpy(d_data, data, alloc_size * sizeof(float), cudaMemcpyHostToDevice);
+    //cudaMemcpy(d_temp, temp, alloc_size * sizeof(float), cudaMemcpyHostToDevice);
 
     if (debug) { print_data(data); }
     if (sequential) {
