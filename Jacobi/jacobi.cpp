@@ -21,7 +21,7 @@ bool sequential = false;
 // Data attributes
 int size = 1024, dimensions = 2, alloc_size;
 // Run attributes
-int gridSize = 1, blockSize = 16, iterations = 1000;
+int grid_size = 1, block_size = -1, threads = -1, iterations = 1000;
 
 static void usage(char *prog_name, string msg) {
     if (msg.size() > 0) {
@@ -32,8 +32,9 @@ static void usage(char *prog_name, string msg) {
     fprintf(stderr, "Options are:\n");
     fpe("-n<size> Set data size (default: 1024)");
     fpe("-d<size> Set number of data dimensions (1, 2, or 3) (default: 2)");
-    fpe("-g<size> Set grid size (default: 1)");
-    fpe("-b<size> Set block size (default: 16)");
+    fpe("-g<size> Set grid size");
+    fpe("-b<size> Set block size");
+    fpe("-t<size> Set thread count");
     fpe("-i<iter> Number of iterations to perform (default: 1000)");
     fpe("-S       Execute sequential, CPU version");
     fpe("-D       Print debug info");
@@ -41,10 +42,10 @@ static void usage(char *prog_name, string msg) {
     exit(EXIT_FAILURE);
 }
 
-bool parse_arguments(int argc, char *argv[]) {
+static bool parse_arguments(int argc, char *argv[]) {
     int opt;
     // Parse args
-    while ((opt = getopt(argc, argv, "n:d:g:b:i:hSD")) != -1) {
+    while ((opt = getopt(argc, argv, "n:d:g:b:t:i:hSD")) != -1) {
         switch (opt) {
             case 'D':
                 debug = true;
@@ -59,11 +60,13 @@ bool parse_arguments(int argc, char *argv[]) {
                 dimensions = atoi(optarg);
                 break;
             case 'g':
-                gridSize = atoi(optarg);
+                grid_size = atoi(optarg);
                 break;
             case 'b':
-                blockSize = atoi(optarg);
+                block_size = atoi(optarg);
                 break;
+            case 't':
+                threads = atoi(optarg);
             case 'i':
                 iterations = atoi(optarg);
                 break;
@@ -92,6 +95,15 @@ bool parse_arguments(int argc, char *argv[]) {
         alloc_size = size * size;
     } else {
         alloc_size = size * size * size;
+    }
+
+    if (threads > 0) {
+        block_size = alloc_size / threads;
+    } else if (block_size > 0) {
+        threads = alloc_size / block_size;
+    } else {
+        threads = 16;
+        block_size = alloc_size / threads;
     }
 
     return true;
