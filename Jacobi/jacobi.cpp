@@ -93,73 +93,100 @@ bool parse_arguments(int argc, char *argv[]) {
 
 // Sequential implementations
 
-void jacobi1d_sequential(float *data) {
+void jacobi1d_sequential(float *data, float *temp) {
+    float *swap;
     for (int t = 0; t < iterations; t++) {
         for (int i = 1; i < size - 1; i++) {
             // Include Self
-            //data[i] = (data[i] + data[i - 1] + data[i + 1]) / 3;
+            //temp[i] = (data[i] + data[i - 1] + data[i + 1]) / 3;
             // Exclude Self
-            data[i] = (data[i - 1] + data[i + 1]) / 2;
+            temp[i] = (data[i - 1] + data[i + 1]) / 2;
         }
+
+        swap = data;
+        data = temp;
+        temp = swap;
     }
 }
 
-void jacobi2d_sequential(float *data) {
+void jacobi2d_sequential(float *data, float *temp) {
+    float *swap;
     for (int t = 0; t < iterations; t++) {
         for (int i = 0; i < size; i++) {
             for (int j = 1; j < size - 1; j++) {
                 // Include Self
-                //data[i * size + j] = (data[i * size + j] + data[(i - 1) * size + j] + data[(i + 1) * size + j] + data[i * size + j - 1] + data[i * size + j + 1]) / 5;
+                //temp[i * size + j] =
+                //    (
+                //        data[i * size + j] +
+                //        data[min(i - 1, 0) * size + j] +
+                //        data[max(i + 1, size - 1) * size + j] +
+                //        data[i * size + j - 1] +
+                //        data[i * size + j + 1]
+                //    ) / 5;
                 // Exclude Self
-                data[i * size + j] = (data[(i - 1) * size + j] + data[(i + 1) * size + j] + data[i * size + j - 1] +
-                                      data[i * size + j + 1]) / 4;
+                temp[i * size + j] =
+                    (
+                        data[max(i - 1, 0) * size + j] +
+                        data[min(i + 1, size - 1) * size + j] +
+                        data[i * size + j - 1] +
+                        data[i * size + j + 1]
+                    ) / 4;
             }
         }
+
+        swap = data;
+        data = temp;
+        temp = swap;
     }
 }
 
-void jacobi3d_sequential(float *data) {
+void jacobi3d_sequential(float *data, float *temp) {
+    float *swap;
     for (int t = 0; t < iterations; t++) {
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < size; j++) {
                 for (int k = 1; k < size - 1; k++) {
                     // Include Self
-                    //data[i * size * size + j * size + k] =
-                    //        (
-                    //                data[i * size * size + j * size + k] +
-                    //                data[(i - 1) * size * size + j * size + k] +
-                    //                data[(i + 1) * size * size + j * size + k] +
-                    //                data[i * size * size + (j - 1) * size + k] +
-                    //                data[i * size * size + (j + 1) * size + k] +
-                    //                data[i * size * size + j * size + k - 1] +
-                    //                data[i * size * size + j * size + k + 1]
-                    //        ) / 7;
+                    //temp[i * size * size + j * size + k] =
+                    //    (
+                    //        data[i * size * size + j * size + k] +
+                    //        data[max(i - 1, 0) * size * size + j * size + k] +
+                    //        data[min(i + 1, size - 1) * size * size + j * size + k] +
+                    //        data[i * size * size + min(j - 1, 0) * size + k] +
+                    //        data[i * size * size + max(j + 1, size - 1) * size + k] +
+                    //        data[i * size * size + j * size + k - 1] +
+                    //        data[i * size * size + j * size + k + 1]
+                    //    ) / 7;
                     // Exclude Self
-                    data[i * size * size + j * size + k] =
-                            (
-                                    data[(i - 1) * size * size + j * size + k] +
-                                    data[(i + 1) * size * size + j * size + k] +
-                                    data[i * size * size + (j - 1) * size + k] +
-                                    data[i * size * size + (j + 1) * size + k] +
-                                    data[i * size * size + j * size + k - 1] +
-                                    data[i * size * size + j * size + k + 1]
-                            ) / 6;
+                    temp[i * size * size + j * size + k] =
+                        (
+                            data[max(i - 1, 0) * size * size + j * size + k] +
+                            data[min(i + 1, size - 1) * size * size + j * size + k] +
+                            data[i * size * size + (j - 1) * size + k] +
+                            data[i * size * size + (j + 1) * size + k] +
+                            data[i * size * size + j * size + k - 1] +
+                            data[i * size * size + j * size + k + 1]
+                        ) / 6;
                 }
             }
         }
+
+        swap = data;
+        data = temp;
+        temp = swap;
     }
 }
 
-void jacobi_sequential(float *data) {
+void jacobi_sequential(float *data, float *temp) {
     switch (dimensions) {
         case 1:
-            jacobi1d_sequential(data);
+            jacobi1d_sequential(data, temp);
             break;
         case 2:
-            jacobi2d_sequential(data);
+            jacobi2d_sequential(data, temp);
             break;
         case 3:
-            jacobi3d_sequential(data);
+            jacobi3d_sequential(data, temp);
             break;
     }
 }
@@ -259,11 +286,14 @@ void print_matrix(float *data) {
 int main(int argc, char *argv[]) {
     parse_arguments(argc, argv);
     float *data = new float[(int) pow(size, dimensions)];
+    float *temp = new float[(int) pow(size, dimensions)];
 
     initialize_data(data);
+    initialize_data(temp);
+
     if (debug) { print_matrix(data); }
     if (sequential) {
-        jacobi_sequential(data);
+        jacobi_sequential(data, temp);
     } else {
         // Add CUDA calls
     }
