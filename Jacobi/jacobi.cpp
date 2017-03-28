@@ -21,7 +21,7 @@ bool sequential = false;
 // Data attributes
 int size = 1024, dimensions = 2, alloc_size;
 // Run attributes
-int grid_size = 1, block_size = -1, threads = -1, iterations = 1000;
+int grid_size = 1, block_count = -1, thread_count = -1, iterations = 1000;
 
 static void usage(char *prog_name, string msg) {
     if (msg.size() > 0) {
@@ -31,10 +31,10 @@ static void usage(char *prog_name, string msg) {
     fprintf(stderr, "Usage: %s [options]\n", prog_name);
     fprintf(stderr, "Options are:\n");
     fpe("-n<size> Set data size (default: 1024)");
-    fpe("-d<size> Set number of data dimensions (1, 2, or 3) (default: 2)");
+    fpe("-d<dims> Set number of data dimensions (1, 2, or 3) (default: 2)");
     fpe("-g<size> Set grid size");
-    fpe("-b<size> Set block size");
-    fpe("-t<size> Set thread count");
+    fpe("-b<num>  Set block count");
+    fpe("-t<num>  Set thread count");
     fpe("-i<iter> Number of iterations to perform (default: 1000)");
     fpe("-S       Execute sequential, CPU version");
     fpe("-D       Print debug info");
@@ -63,10 +63,10 @@ static bool parse_arguments(int argc, char *argv[]) {
                 grid_size = atoi(optarg);
                 break;
             case 'b':
-                block_size = atoi(optarg);
+                block_count = atoi(optarg);
                 break;
             case 't':
-                threads = atoi(optarg);
+                thread_count = atoi(optarg);
             case 'i':
                 iterations = atoi(optarg);
                 break;
@@ -97,13 +97,13 @@ static bool parse_arguments(int argc, char *argv[]) {
         alloc_size = size * size * size;
     }
 
-    if (threads > 0) {
-        block_size = alloc_size / threads;
-    } else if (block_size > 0) {
-        threads = alloc_size / block_size;
+    if (thread_count > 0) {
+        block_count = alloc_size / thread_count;
+    } else if (block_count > 0) {
+        thread_count = alloc_size / block_count;
     } else {
-        threads = 16;
-        block_size = alloc_size / threads;
+        thread_count = 16;
+        block_count = alloc_size / thread_count;
     }
 
     return true;
@@ -211,60 +211,83 @@ void jacobi_sequential(float *data, float *temp) {
 
 // CUDA Kernels
 
-__global__ void jacobi1d_kernel(float *data) {
+__global__ void jacobi1d_naive(float *data) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
-    float tmp = (data[id - 1] + data[id] + data[id + 1]) / 3;
-    __syncthreads();
-    data[id] = tmp;
+    float tmp;
+    for (int t = 0; t < iterations; t++) {
+        if (id > 0 && id < size) {
+            tmp = (data[id - 1] + data[id] + data[id + 1]) / 3;
+        } else {
+            // Edge, do not change.
+            tmp = data[id];
+        }
+        // Note: this sync is to prevent RAW issues inside of blocks. There is currently nothing preventing it between
+        // blocks.
+        __syncthreads();
+
+        data[id] = tmp;
+    }
 }
 
-__global__ void jacobi2d_kernel() {
+__global__ void jacobi2d_naive() {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     int x = id % size;
     int y = id / size;
+    float tmp;
+    for (int t = 0; t < iterations; t++) {
+        if (x > 0 && x < size - 1 && y > 0 && y < size - 1) {
+            tmp =
+                (
+                    data[y * size + x] +
+                    data[y * size + x - 1] +
+                    data[y * size + x + 1] +
+                    data[(y - 1) * size + x] +
+                    data[(y + 1) * size + x]
+                ) / 5;
+        } else {
+            // Edge, do not change.
+            tmp = data[id];
+        }
 
-    float tmp =
-        (
-            data[id] +
-            data[y * size + x - 1] +
-            data[y * size + x + 1] +
-            data[(y - 1) * size + x] +
-            data[(y + 1) * size + x]
-        ) / 5;
-    //float tmp = (data[id] + data[id - 1] + data[id + 1] + data[id - size] + data[id + size]) / 5;
-    __syncthreads();
-    data[id] = tmp;
+        // Note: this sync is to prevent RAW issues inside of blocks. There is currently nothing preventing it between
+        // blocks.
+        __syncthreads();
+
+        data[id] = tmp;
+    }
 }
 
-__global__ void jacobi3d_kernel() {
+__global__ void jacobi3d_naive(float *data) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     int x = id % size;
     int rem = id / size;
     int y = rem % size;
     int z = rem / size;
+    float tmp;
 
-    float tmp =
-        (
-            data[z * size * size + y * size + x] +
-            data[z * size * size + y * size + x - 1] +
-            data[z * size * size + y * size + x + 1] +
-            data[z * size * size + (y - 1) * size + x] +
-            data[z * size * size + (y + 1) * size + x] +
-            data[(z - 1) * size * size + y * size + x] +
-            data[(z + 1) * size * size + y * size + x]
-        ) / 7;
-    //float tmp =
-    //    (
-    //        data[id] +
-    //        data[id - 1] +
-    //        data[id + 1] +
-    //        data[id - size] +
-    //        data[id + size] +
-    //        data[id - size * size] +
-    //        data[id + size * size]
-    //    ) / 7;
-    __syncthreads();
-    data[id] = tmp;
+    for (int t = 0; t < iterations; t++) {
+        if (x > 0 && x < size - 1 && y > 0 && y < size - 1 && z > 0 && z < size - 1) {
+            tmp =
+                (
+                    data[z * size * size + y * size + x] +
+                    data[z * size * size + y * size + x - 1] +
+                    data[z * size * size + y * size + x + 1] +
+                    data[z * size * size + (y - 1) * size + x] +
+                    data[z * size * size + (y + 1) * size + x] +
+                    data[(z - 1) * size * size + y * size + x] +
+                    data[(z + 1) * size * size + y * size + x]
+                ) / 7;
+        } else {
+            // Edge, do not change.
+            tmp = data[id];
+        }
+
+        // Note: this sync is to prevent RAW issues inside of blocks. There is currently nothing preventing it between
+        // blocks.
+        __syncthreads();
+
+        data[id] = tmp;
+    }
 }
 
 // Data Initialization
