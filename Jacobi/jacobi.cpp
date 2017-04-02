@@ -5,6 +5,7 @@
 #include "parse_args.h"
 #include "data_utils.h"
 #include "sequential.h"
+#include "sequential_blocked.h"
 
 using namespace std;
 
@@ -21,7 +22,12 @@ int main(int argc, char *argv[]) {
 
     if (args.debug) { print_data(data, args.size, args.dimensions); }
     if (args.sequential) {
-        jacobi_sequential(data, temp, args.iterations, args.size, args.dimensions);
+        if (args.blocked) {
+            jacobi_sequential_blocked(data, temp, args.iterations, args.size, args.dimensions, args.xBlockSize,
+                                      args.yBlockSize, args.zBlockSize);
+        } else {
+            jacobi_sequential(data, temp, args.iterations, args.size, args.dimensions);
+        }
     } else {
         // Add CUDA calls
     }

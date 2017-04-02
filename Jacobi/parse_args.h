@@ -16,8 +16,10 @@ using namespace std;
 struct Args {
     bool debug = false;
     bool sequential = false;
+    bool blocked = false;
     // Data attributes
     int size = 1024, dimensions = 2, alloc_size;
+    int xBlockSize, yBlockSize, zBlockSize, tBlockSize;
     // Run attributes
     int grid_size = 1, block_count = -1, thread_count = -1, iterations = 1000;
 };
@@ -37,6 +39,7 @@ void usage(char *prog_name, string msg) {
     fpe("-t<num>  Set thread count");
     fpe("-i<iter> Number of iterations to perform (default: 1000)");
     fpe("-S       Execute sequential, CPU version");
+    fpe("-B       Execute blocked sequential, CPU version");
     fpe("-D       Print debug info");
     fpe("-h       Print usage info (this message)");
     exit(EXIT_FAILURE);
@@ -47,13 +50,16 @@ Args parse_arguments(int argc, char *argv[]) {
 
     int opt;
     // Parse args
-    while ((opt = getopt(argc, argv, "n:d:g:b:t:i:hSD")) != -1) {
+    while ((opt = getopt(argc, argv, "n:d:g:b:t:i:x:y:z:hSBD")) != -1) {
         switch (opt) {
             case 'D':
                 args.debug = true;
                 break;
             case 'S':
                 args.sequential = true;
+                break;
+            case 'B':
+                args.blocked = true;
                 break;
             case 'n':
                 args.size = atoi(optarg);
@@ -69,8 +75,18 @@ Args parse_arguments(int argc, char *argv[]) {
                 break;
             case 't':
                 args.thread_count = atoi(optarg);
+                break;
             case 'i':
                 args.iterations = atoi(optarg);
+                break;
+            case 'x':
+                args.xBlockSize = atoi(optarg);
+                break;
+            case 'y':
+                args.yBlockSize = atoi(optarg);
+                break;
+            case 'z':
+                args.zBlockSize = atoi(optarg);
                 break;
             case 'h':
                 usage(argv[0], "");

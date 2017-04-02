@@ -24,7 +24,7 @@ void jacobi1d_sequential_blocked(float *data, float *temp, int iterations, int s
     }
 }
 
-void jacobi2d_sequential(float *data, float *temp, int iterations, int size, int xBlockSize, int yBlockSize) {
+void jacobi2d_sequential_blocked(float *data, float *temp, int iterations, int size, int xBlockSize, int yBlockSize) {
     int xxIterations = size / xBlockSize, yyIterations = size / yBlockSize;
 
     for (int t = 0; t < iterations; t++) {
@@ -56,8 +56,8 @@ void jacobi2d_sequential(float *data, float *temp, int iterations, int size, int
     }
 }
 
-void jacobi3d_sequential(float *data, float *temp, int iterations, int size, int xBlockSize, int yBlockSize,
-                         int zBlockSize) {
+void jacobi3d_sequential_blocked(float *data, float *temp, int iterations, int size, int xBlockSize, int yBlockSize,
+                                 int zBlockSize) {
     int xxIterations = size / xBlockSize, yyIterations = size / yBlockSize, zzIterations = size / zBlockSize;
     for (int t = 0; t < iterations; t++) {
         for (int zz = 0; zz < zzIterations; zz++) {
@@ -100,16 +100,17 @@ void jacobi3d_sequential(float *data, float *temp, int iterations, int size, int
     }
 }
 
-void jacobi_sequential(float *data, float *temp, int iterations, int size, int dimensions) {
+void jacobi_sequential_blocked(float *data, float *temp, int iterations, int size, int dimensions, int xBlockSize,
+                               int yBlockSize = 0, int zBlockSize = 0) {
     switch (dimensions) {
         case 1:
-            jacobi1d_sequential(data, temp, iterations, size);
+            jacobi1d_sequential_blocked(data, temp, iterations, size, xBlockSize);
             break;
         case 2:
-            jacobi2d_sequential(data, temp, iterations, size);
+            jacobi2d_sequential_blocked(data, temp, iterations, size, xBlockSize, yBlockSize);
             break;
         case 3:
-            jacobi3d_sequential(data, temp, iterations, size);
+            jacobi3d_sequential_blocked(data, temp, iterations, size, xBlockSize, yBlockSize, zBlockSize);
             break;
     }
 }
