@@ -5,6 +5,10 @@
 #ifndef CSC5593_GPU_PROJECT_SEQUENTIAL_BLOCKED_H
 #define CSC5593_GPU_PROJECT_SEQUENTIAL_BLOCKED_H
 
+#include <algorithm>
+
+using namespace std;
+
 void jacobi1d_sequential_blocked(float *data, float *temp, int iterations, int size, int xBlockSize) {
     int xxIterations = size / xBlockSize;
 

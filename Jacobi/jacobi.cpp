@@ -20,7 +20,7 @@ int main(int argc, char *argv[]) {
     initialize_data(data, args.size, args.dimensions);
     initialize_data(temp, args.size, args.dimensions);
 
-    if (args.debug) { print_data(data, args.size, args.dimensions); }
+    //if (args.debug) { print_data(data, args.size, args.dimensions); }
     if (args.sequential) {
         if (args.blocked) {
             jacobi_sequential_blocked(data, temp, args.iterations, args.size, args.dimensions, args.xBlockSize,
