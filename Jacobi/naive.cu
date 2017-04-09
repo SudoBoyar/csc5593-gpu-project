@@ -1,19 +1,17 @@
 __global__ void jacobi1d_naive(float *data) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     float tmp;
-    for (int t = 0; t < iterations; t++) {
-        if (id > 0 && id < size) {
-            tmp = (data[id - 1] + data[id] + data[id + 1]) / 3;
-        } else {
-            // Edge, do not change.
-            tmp = data[id];
-        }
-        // Note: this sync is to prevent RAW issues inside of blocks. There is currently nothing preventing it between
-        // blocks.
-        __syncthreads();
-
-        data[id] = tmp;
+    if (id > 0 && id < size) {
+        tmp = (data[id - 1] + data[id] + data[id + 1]) / 3;
+    } else {
+        // Edge, do not change.
+        tmp = data[id];
     }
+    // Note: this sync is to prevent RAW issues inside of blocks. There is currently nothing preventing it between
+    // blocks.
+    __syncthreads();
+
+    data[id] = tmp;
 }
 
 __global__ void jacobi2d_naive() {

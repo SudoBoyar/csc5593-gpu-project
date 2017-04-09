@@ -17,6 +17,7 @@ struct Args {
     bool debug = false;
     bool sequential = false;
     bool blocked = false;
+    bool overlapped = false;
     // Data attributes
     int size = 1024, dimensions = 2, alloc_size;
     int xBlockSize, yBlockSize, zBlockSize, tBlockSize;
@@ -38,8 +39,13 @@ void usage(char *prog_name, string msg) {
     fpe("-b<num>  Set block count");
     fpe("-t<num>  Set thread count");
     fpe("-i<iter> Number of iterations to perform (default: 1000)");
+    fpe("-x<size> X Dimension");
+    fpe("-y<size> Y Dimension");
+    fpe("-z<size> Z Dimension");
+    fpe("-T<size> T Dimension");
     fpe("-S       Execute sequential, CPU version");
     fpe("-B       Execute blocked sequential, CPU version");
+    fpe("-O       Execute sequential overlapped tiling, CPU version");
     fpe("-D       Print debug info");
     fpe("-h       Print usage info (this message)");
     exit(EXIT_FAILURE);
@@ -50,7 +56,7 @@ Args parse_arguments(int argc, char *argv[]) {
 
     int opt;
     // Parse args
-    while ((opt = getopt(argc, argv, "n:d:g:b:t:i:x:y:z:hSBD")) != -1) {
+    while ((opt = getopt(argc, argv, "n:d:g:b:t:i:x:y:z:T:hSBOD")) != -1) {
         switch (opt) {
             case 'D':
                 args.debug = true;
@@ -60,6 +66,9 @@ Args parse_arguments(int argc, char *argv[]) {
                 break;
             case 'B':
                 args.blocked = true;
+                break;
+            case 'O':
+                args.overlapped = true;
                 break;
             case 'n':
                 args.size = atoi(optarg);
@@ -87,6 +96,9 @@ Args parse_arguments(int argc, char *argv[]) {
                 break;
             case 'z':
                 args.zBlockSize = atoi(optarg);
+                break;
+            case 'T':
+                args.tBlockSize = atoi(optarg);
                 break;
             case 'h':
                 usage(argv[0], "");
