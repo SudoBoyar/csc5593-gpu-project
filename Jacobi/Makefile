@@ -1,10 +1,10 @@
 CC=g++
-BINARIES=jacobi
+BINARIES=jacobi.out
 
 all: $(BINARIES)
 
-jacobi: jacobi.cpp data_utils.h parse_args.h sequential.h sequential_blocked.h sequential_overlapped_tiling.h
-	$(CC) jacobi.cpp data_utils.h parse_args.h sequential.h sequential_blocked.h sequential_overlapped_tiling.h -o jacobi
+jacobi.out: jacobi.cpp data_utils.h parse_args.h sequential.h sequential_blocked.h sequential_overlapped_tiling.h
+	$(CC) jacobi.cpp data_utils.h parse_args.h sequential.h sequential_blocked.h sequential_overlapped_tiling.h -o jacobi.out
 
 clean:
 	rm -f $(BINARIES)
