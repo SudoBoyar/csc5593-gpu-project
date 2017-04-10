@@ -18,7 +18,7 @@ __global__ void jacobi1d_naive(Matrix data, Matrix result) {
     __syncthreads();
 
     if (id < size) {
-        result.elements[id] = tmp;
+        result.elements[id] = newValue;
     }
 }
 
@@ -37,10 +37,10 @@ __global__ void jacobi2d_naive(Matrix data, Matrix result) {
     int yPrev = x + (y - 1) * data.width;
     int yNext = x + (y + 1) * data.width;
 
-    float tmp;
+    float newValue;
 
     if (x > 0 && x < data.width - 1 && y > 0 && y < data.height - 1) {
-        tmp =
+        newValue =
             (
                 data.elements[index] +
                 data.elements[xPrev] +
@@ -50,17 +50,17 @@ __global__ void jacobi2d_naive(Matrix data, Matrix result) {
             ) * 0.2;
     } else if (x == 0 || x == data.width - 1 || y == 0 || y == data.height - 1) {
         // Edge, do not change.
-        tmp = data[id];
+        newValue = data[id];
     } else {
         /* TODO: Test if this is a necessary condition */
         // Beyond the edge. We should be avoiding it, but just in case.
-        tmp = 0.0;
+        newValue = 0.0;
     }
 
     __syncthreads();
 
     if (x < data.width && y < data.height) {
-        result.elements[index] = tmp;
+        result.elements[index] = newValue;
     }
 }
 
@@ -88,10 +88,10 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result) {
     int zPrev = x + yTemp + zTemp - xySurface; // x + y * data.width + (z-1) * data.width * data.height;
     int zNext = x + yTemp + zTemp + xySurface; // x + y * data.width + (z+1) * data.width * data.height;
 
-    float tmp;
+    float newValue;
 
     if (x > 0 && x < data.width - 1 && y > 0 && y < data.height - 1 && z > 0 && z < data.depth - 1) {
-        tmp =
+        newValue =
             (
                 data.elements[index] +
                 data.elements[xPrev] +
@@ -103,16 +103,16 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result) {
             ) / 7;
     } else if (x == 0 || x == data.width - 1 || y == 0 || y == data.height - 1 || z == 0 || z == data.depth - 1) {
         // Edge, do not change.
-        tmp = data[id];
+        newValue = data[id];
     } else {
         /* TODO: Test if this is a necessary condition */
         // Beyond the edge. We should be avoiding it, but just in case.
-        tmp = 0.0;
+        newValue = 0.0;
     }
 
     __syncthreads();
 
     if (x < data.width && y < data.height && z < data.depth) {
-        result.elements[index] = tmp;
+        result.elements[index] = newValue;
     }
 }
