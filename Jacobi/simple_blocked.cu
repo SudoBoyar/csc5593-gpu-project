@@ -1,114 +1,138 @@
-__global__ void jacobi1d_blocked(float *data, int iterations, int size) {
-    int iterCount = iterations / blockDim.y;
-    int iterStart = iterCount * blockIdx.y;
-    int iterEnd = iterStart + iterCount;
+#include "matrix.h"
 
-    int tileSize = size / blockDim.x;
-    int tileStart = tileSize * blockIdx.x;
-    int tileEnd = tileStart + tileSize;
 
-    int tid = threadIdx.x;
+__global__ void jacobi1d_blocked(Matrix data, Matrix result) {
+    int threadCol = threadIdx.x;
+    int blockCol = blockIdx.x;
 
-    int threadSize = tileSize / threadDim.x;
+    // Where the block starts in global data
+    int blockStart = blockCol * TILE_WIDTH;
+    //// Where the thread starts in the shared block
+    //int threadStart = threadCol * PER_THREAD;
 
-    __shared__ float temp[tileSize];
-    float local[threadSize];
+    __shared__ float shared[TILE_WIDTH];
+    float local[PER_THREAD];
 
-    float *dataPointer = data;
-
-    for (int i = 0; i < threadSize; i++) {
-        temp[threadSize * tid + i] = data[tileStart + threadSize * tid + i];
+#pragma unroll
+    for (int i = 0; i < PER_THREAD; i++) {
+        // Issue contiguous reads, e.g. for 4 threads, 2 per thread: do 11|11|22|22 instead of 12|12|12|12
+        // => shared[ [0-3] + 4 * [0-1] ]= elements[ [0-3] + 4 * [0-1] + blockStart ]
+        shared[threadCol + threadDim.x * i] = data.elements[threadCol + threadDim.x * i + blockStart];
     }
 
-    for (int t = iterStart; t < iterEnd; t++) {
-        for (int i = 0; i < threadSize; i++) {
-            local[i] = (dataPointer[tid * threadSize + i] +
-                        dataPointer[tid * threadSize + i - 1] +
-                        dataPointer[tid * threadSize + i + 1]) / 3;
+#pragma unroll
+    for (int i = 0; i < PER_THREAD; i++) {
+        int x = threadCol + i * threadDim.x;
+        int globalX = x + blockStart;
+        if (globalX > 1 && globalX < data.width - 1) {
+            local[i] = (shared[x] + shared[x - 1] + shared[x + 1]) / 3;
+        } else if (globalX == 0 || globalX == data.width - 1) {
+            local[i] = shared[x];
+        } else {
+            local[i] = 0.0;
         }
-        __syncthreads();
-        for (int i = 0; i < threadSize; i++) {
-            temp[threadSize * tid + i] = local[i];
-        }
-    }
-
-    for (int i = 0; i < threadSize; i++) {
-        data[tileStart + threadSize * tid + i] = temp[threadSize * tid + i];
-    }
-}
-
-__global__ void Jacobi2DKernel(Matrix A, Matrix result) {
-    int thread_row = threadIdx.y;
-    int thread_col = threadIdx.x;
-    int block_row = blockIdx.y;
-    int block_col = blockIdx.x;
-
-    float new_value = 0.0;
-    int x = block_col * TILE_WIDTH + thread_col;
-    int y = block_row * TILE_HEIGHT + thread_row;
-
-    int A_index  =  x    +  y    * A.width;
-    int A_x_prev = (x-1) +  y    * A.width;
-    int A_x_next = (x+1) +  y    * A.width;
-    int A_y_prev =  x    + (y-1) * A.width;
-    int A_y_next =  x    + (y+1) * A.width;
-
-    if (x >= A.width || y >= A.height) {
-        new_value = 0.0;
-    } else if (x == 0 || x == A.width - 1 ||  y == 0 || y == A.height - 1) {
-        new_value = A.elements[A_index];
-    } else {
-        //if (0 < x  && x < (A.width-1) && 0 < y && y < (A.height-1)) {
-        // 0.2*(A[i][j] + A[i-1][j] + A[i+1][j] + A[i][j-1] + A[i][j+1]);
-        new_value = 0.2 * (A.elements[A_index]  +
-                           A.elements[A_x_prev] +
-                           A.elements[A_x_next] +
-                           A.elements[A_y_prev] +
-                           A.elements[A_y_next]
-        );
     }
 
     __syncthreads();
 
-    if (x < A.width && y < A.height) {
-        result.elements[A_index] = new_value;
+#pragma unroll
+    for (int i = 0; i < PER_THREAD; i++) {
+        int x = threadCol + threadDim.x * i + blockStart;
+        if (x < data.width) {
+            result.elements[x] = local[i];
+        }
     }
 }
 
-__global__ void jacobi2d_naive() {
-    int thread_row = threadIdx.y;
-    int thread_col = threadIdx.x;
-    int block_row = blockIdx.y;
-    int block_col = blockIdx.x;
+__global__ void jacobi2d_blocked(Matrix data, Matrix result) {
+    int threadRow = threadIdx.y;
+    int threadCol = threadIdx.x;
+    int blockRow = blockIdx.y;
+    int blockCol = blockIdx.x;
 
-    float new_value = 0.0;
-    int x = block_col * TILE_WIDTH + thread_col;
-    int y = block_row * TILE_HEIGHT + thread_row;
+    // Tile Starting
+    int xTileStart = blockCol * TILE_WIDTH;
+    int yTileStart = blockRow * TILE_HEIGHT;
 
-    int id = blockIdx.x * blockDim.x + threadIdx.x;
-    int x = id % size;
-    int y = id / size;
-    float tmp;
-    for (int t = 0; t < iterations; t++) {
-        if (x > 0 && x < size - 1 && y > 0 && y < size - 1) {
-            tmp =
-                (
-                    data[y * size + x] +
-                    data[y * size + x - 1] +
-                    data[y * size + x + 1] +
-                    data[(y - 1) * size + x] +
-                    data[(y + 1) * size + x]
-                ) / 5;
-        } else {
-            // Edge, do not change.
-            tmp = data[id];
+    __shared__ float shared[TILE_WIDTH][TILE_HEIGHT];
+    float local[PER_THREAD_X][PER_THREAD_Y];
+
+#pragma unroll
+    for (int y = 0; y < PER_THREAD_Y; y++) {
+#pragma unroll
+        for (int x = 0; x < PER_THREAD_X; x++) {
+            /*
+             * We want to be doing block-contiguous reads, e.g. for 2x2 block dimension, 2 per thread for x and y
+             * we want the read pattern to look like:
+             *
+             * 11|22
+             * 11|22
+             * -----
+             * 33|44
+             * 33|44
+             *
+             * Optimizing the width for reads is the responsibility of the calling code.
+             */
+            // TODO: Index integrity checks for out of tile range.
+            shared[threadCol + threadDim.x * x][threadRow + threadDim.y * y] =
+                data.elements[
+                    yTileStart + // Y location of tile start in data
+                    threadRow * data.width + // Up to the thread's initial row
+                    threadDim.y * y * data.width + // And up again to get to the y'th sub-block
+                    xTileStart + // X location of tile start in data
+                    threadCol + // Over to the initial x position for the thread
+                    threadDim.x * x // And over again to skip to the x'th sub_block
+                ];
         }
+    }
 
-        // Note: this sync is to prevent RAW issues inside of blocks. There is currently nothing preventing it between
-        // blocks.
-        __syncthreads();
+#pragma unroll
+    for (int y = 0; y < PER_THREAD_Y; y++) {
+        int globalY = yTileStart + threadRow * data.width + threadDim.y * y * data.width;
+        int sharedY = threadRow + threadDim.y * y;
+#pragma unroll
+        for (int x = 0; x < PER_THREAD_X; x++) {
+            int globalX = xTileStart + threadCol + threadDim.x * x;
+            int sharedX = threadCol + x * threadDim.x;
+            if (globalX > 0 && globalX < data.width - 1 && globalY > 0 && globalY < data.height - 1) {
+                // Calculate new value
+                local[x][y] =
+                    (
+                        shared[sharedX][sharedY] +
+                        shared[sharedX - 1][sharedY] +
+                        shared[sharedX + 1][sharedY] +
+                        shared[sharedX][sharedY - 1] +
+                        shared[sharedX][sharedY + 1]
+                    ) * 0.2;
+            } else if (globalX == 0 || globalX == data.width - 1 || globalY == 0 || globalY == data.height - 1) {
+                // Edge, do not change.
+                local[x][y] = shared[sharedX][sharedY];
+            } else {
+                /* TODO: Test if this is a necessary condition */
+                // Beyond the edge. We should be avoiding it, but just in case.
+                local[x][y] = 0.0;
+            }
+        }
+    }
 
-        data[id] = tmp;
+    __syncthreads();
+
+
+#pragma unroll
+    for (int y = 0; y < PER_THREAD_Y; y++) {
+#pragma unroll
+        for (int x = 0; x < PER_THREAD_X; x++) {
+            if (x < data.width && y < data.height) {
+                result.elements[
+                    yTileStart + // Y location of tile start in data
+                    threadRow * data.width + // Up to the thread's initial row
+                    threadDim.y * y * data.width + // And up again to get to the y'th sub-block
+                    xTileStart + // X location of tile start in data
+                    threadCol + // Over to the initial x position for the thread
+                    threadDim.x * x // And over again to skip to the x'th sub_block
+                ] = local[x][y];
+            }
+        }
     }
 }
 
