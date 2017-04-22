@@ -7,6 +7,8 @@
 
 #define HANDLE_ERROR(err)  ( HandleError( err, __FILE__, __LINE__ ) )
 
+using namespace std;
+
 void HandleError(cudaError_t err, const char *file, int line) {
     //
     // Handle and report on CUDA errors.
@@ -194,7 +196,7 @@ typedef struct {
 Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 1) {
     Matrix data;
 
-    if (dimension == 1 && width > 1) {
+    if (dimensions == 1 && width > 1) {
         data.width = width;
         data.height = 1;
         data.depth = 1;
@@ -260,7 +262,7 @@ __global__ void jacobi1d_naive(Matrix data, Matrix result) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     float newValue;
 
-    if (id > 0 && id < size - 1) {
+    if (id > 0 && id < data.width - 1) {
         newValue = (data.elements[id - 1] + data.elements[id] + data.elements[id + 1]) / 3;
         __syncthreads();
         result.elements[id] = newValue;
@@ -312,9 +314,9 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result) {
     int blockRow = blockIdx.y;
     int blockCol = blockIdx.x;
 
-    int x = blockCol * TILE_WIDTH + threadCol;
-    int y = blockRow * TILE_HEIGHT + threadRow;
-    int z = blockDep * TILE_DEPTH + threadDep;
+    int x = blockCol * blockDim.x + threadCol;
+    int y = blockRow * blockDim.y + threadRow;
+    int z = blockDep * blockDim.z + threadDep;
 
     int xySurface = data.width * data.height;
     int zTemp = z * xySurface;
@@ -377,8 +379,8 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
 int main(int argc, char *argv[]) {
     Args args = parse_arguments(argc, argv);
     Matrix A, B;
-    A = initialize_matrix(args.dimensions, x, y, z);
-    B = initialize_matrix(args.dimensions, x, y, z);
+    A = initialize_matrix(args.dimensions, size, size, size);
+    B = initialize_matrix(args.dimensions, size, size, size);
 
     atexit(cleanupCuda);
 
