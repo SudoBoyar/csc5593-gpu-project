@@ -20,7 +20,8 @@ struct Args {
     bool overlapped = false;
     // Data attributes
     int size = 1024, dimensions = 2, alloc_size;
-    int xBlockSize, yBlockSize, zBlockSize, tBlockSize;
+    int xSize = 1, ySize = 1, zSize = 1;
+    int xBlockSize = 1, yBlockSize = 1, zBlockSize = 1, tBlockSize;
     // Run attributes
     int grid_size = 1, block_count = -1, thread_count = -1, iterations = 1000;
 };
@@ -91,11 +92,20 @@ Args parse_arguments(int argc, char *argv[]) {
             case 'x':
                 args.xBlockSize = atoi(optarg);
                 break;
+            case 'X':
+                args.xSize = atoi(optarg);
+                break;
             case 'y':
                 args.yBlockSize = atoi(optarg);
                 break;
+            case 'Y':
+                args.ySize = atoi(optarg);
+                break;
             case 'z':
                 args.zBlockSize = atoi(optarg);
+                break;
+            case 'Z':
+                args.zSize = atoi(optarg);
                 break;
             case 'T':
                 args.tBlockSize = atoi(optarg);

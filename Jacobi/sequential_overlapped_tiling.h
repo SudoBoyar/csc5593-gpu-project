@@ -13,39 +13,57 @@
 using namespace std;
 
 void
-jacobi1d_sequential_overlapped(float *data, float *temp, int iterations, int size, int xBlockSize, int tBlockSize) {
+jacobi1d_sequential_overlapped(float *data, float *out, int iterations, int size, int xBlockSize, int tBlockSize) {
     int xxIterations = size / xBlockSize;
     int ttIterations = (int) ceil((float) iterations / (float) tBlockSize);
     int xBlockStart, xBlockEnd;
     int xStart, xEnd;
 
+    float temp0[size];
+    float temp1[size];
+    float *read;
+    float *write;
+
     for (int tt = 0; tt < ttIterations; tt++) {
         for (int xx = 0; xx < xxIterations; xx++) {
             // 0 or block beginning - t-height of block
-            xBlockStart = xx * xBlockSize - tBlockSize;
-            xBlockEnd = (xx + 1) * xBlockSize + tBlockSize;
+            xBlockStart = xx * xBlockSize - tBlockSize + 1;
+            xBlockEnd = (xx + 1) * xBlockSize + tBlockSize - 1;
 
             for (int t = 0; t < tBlockSize; t++) {
+                if (t%2 == 0) {
+                    read = temp0;
+                    write = temp1;
+                } else {
+                    read = temp1;
+                    write = temp0;
+                }
+                if (t == 0) {
+                    read = data;
+                } else if (t == tBlockSize - 1) {
+                    write = out;
+                }
+
                 xStart = max(xBlockStart + t, 1);
                 xEnd = min(xBlockEnd - t, size - 1);
                 for (int x = xStart; x < xEnd; x++) {
-                    temp[x] = (data[x] + data[x - 1] + data[x + 1]) / 3;
+                    fprintf(stdout, "%d %d %d %d\n", tt, xx, t, x);
+                    write[x] = (read[x] + read[x - 1] + read[x + 1]) / 3;
                 }
             }
-
-            swap(data, temp);
         }
     }
 }
 
-void jacobi2d_sequential_overlapped(float *data, float *temp, int iterations, int size, int xBlockSize, int yBlockSize,
+void jacobi2d_sequential_overlapped(float *data, float *out, int iterations, int size, int xBlockSize, int yBlockSize,
                                     int tBlockSize) {
     int xxIterations = (int) ceil((float) size / (float) xBlockSize);
     int yyIterations = (int) ceil((float) size / (float) yBlockSize);
-    int ttIterations = (int) ceil((float) size / (float) tBlockSize);
+    int ttIterations = (int) ceil((float) iterations / (float) tBlockSize);
 
     int yBlockStart, yBlockEnd, xBlockStart, xBlockEnd, yStart, yEnd, xStart, xEnd;
 
+    float temp[size * size];
     float *read;
     float *write;
 
@@ -58,22 +76,24 @@ void jacobi2d_sequential_overlapped(float *data, float *temp, int iterations, in
                 xBlockEnd = (xx + 1) * xBlockSize + tBlockSize - 1;
 
                 for (int t = 0; t < tBlockSize; t++) {
-                    read = temp + size * size * (t-1);
-                    write = temp + size * size * t;
+                    read = temp;
+                    write = temp;
                     if (t == 0) {
                         read = data;
                     } else if (t == tBlockSize - 1) {
-                        write = data;
+                        write = out;
                     }
 
                     yStart = max(yBlockStart + t, 1);
                     yEnd = min(yBlockEnd - t, size - 1);
+                    fprintf(stdout, "yStart/end: %d %d\n", yStart, yEnd);
                     for (int y = yStart; y < yEnd; y++) {
-                        xStart = max(xBlockStart + t, 1);
-                        xEnd = min(xBlockEnd - t, size - 1);
+                        xStart = max(xBlockStart + t - 1, 1);
+                        xEnd = min(xBlockEnd - t + 1, size - 1);
+                        fprintf(stdout, "xStart/end: %d %d\n", xStart, xEnd);
 
                         for (int x = xStart; x < xEnd; x++) {
-                            fprintf(stdout, "%d %d %d %d %d %d\n", tt, yy, xx, t, y, x);
+                            //fprintf(stdout, "%d %d %d %d %d %d\n", tt, yy, xx, t, y, x);
                             write[y * size + x] =
                                 (
                                     read[y * size + x] +

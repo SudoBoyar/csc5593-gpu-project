@@ -6,19 +6,11 @@ __global__ void jacobi1d_naive(Matrix data, Matrix result) {
 
     if (id > 0 && id < size - 1) {
         newValue = (data.elements[id - 1] + data.elements[id] + data.elements[id + 1]) / 3;
-    } else if (id == 0 || id == size - 1) {
-        // Edge, do not change.
-        newValue = data.elements[id];
-    } else {
-        /* TODO: Test if this is a necessary condition */
-        // Beyond edge, just in case.
-        newValue = 0.0;
-    }
-
-    __syncthreads();
-
-    if (id < size) {
+        __syncthreads();
         result.elements[id] = newValue;
+    } else {
+        // Edge or outside completely, do not change.
+        __syncthreads();
     }
 }
 
@@ -28,8 +20,8 @@ __global__ void jacobi2d_naive(Matrix data, Matrix result) {
     int blockRow = blockIdx.y;
     int blockCol = blockIdx.x;
 
-    int x = blockCol * TILE_WIDTH + threadCol;
-    int y = blockRow * TILE_HEIGHT + threadRow;
+    int x = blockCol * blockDim.x + threadCol;
+    int y = blockRow * blockDim.y + threadRow;
 
     int index = x + y * data.width;
     int xPrev = (x - 1) + y * data.width;
@@ -48,19 +40,11 @@ __global__ void jacobi2d_naive(Matrix data, Matrix result) {
                 data.elements[yPrev] +
                 data.elements[yNext]
             ) * 0.2;
-    } else if (x == 0 || x == data.width - 1 || y == 0 || y == data.height - 1) {
-        // Edge, do not change.
-        newValue = data[id];
-    } else {
-        /* TODO: Test if this is a necessary condition */
-        // Beyond the edge. We should be avoiding it, but just in case.
-        newValue = 0.0;
-    }
-
-    __syncthreads();
-
-    if (x < data.width && y < data.height) {
+        __syncthreads();
         result.elements[index] = newValue;
+    } else {
+        // Edge or beyond, do not change.
+        __syncthreads();
     }
 }
 
@@ -101,18 +85,10 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result) {
                 data.elements[zPrev] +
                 data.elements[zNext]
             ) / 7;
-    } else if (x == 0 || x == data.width - 1 || y == 0 || y == data.height - 1 || z == 0 || z == data.depth - 1) {
-        // Edge, do not change.
-        newValue = data[id];
-    } else {
-        /* TODO: Test if this is a necessary condition */
-        // Beyond the edge. We should be avoiding it, but just in case.
-        newValue = 0.0;
-    }
-
-    __syncthreads();
-
-    if (x < data.width && y < data.height && z < data.depth) {
+        __syncthreads();
         result.elements[index] = newValue;
+    } else {
+        // Edge or beyond, do not change.
+        __syncthreads();
     }
 }
