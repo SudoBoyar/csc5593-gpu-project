@@ -384,12 +384,12 @@ void print_data(float *data, int size, int dimensions) {
 
     if (dimensions == 1) {
         for (int x = 0; x < size; x++) {
-            fprintf(stdout, "%.3f ", data[x]);
+            printf("%.3f ", data[x]);
         }
     } else if (dimensions == 2) {
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
-                fprintf(stdout, "%.3f ", data[y * size + x]);
+                printf("%.3f ", data[y * size + x]);
             }
             cout << endl;
         }
@@ -397,7 +397,7 @@ void print_data(float *data, int size, int dimensions) {
         for (int z = 0; z < size; z++) {
             for (int y = 0; y < size; y++) {
                 for (int x = 0; x < size; x++) {
-                    fprintf(stdout, "%.3f ", data[z * size * size + y * size + x]);
+                    printf("%.3f ", data[z * size * size + y * size + x]);
                 }
                 cout << endl;
             }
@@ -417,5 +417,5 @@ int main(int argc, char *argv[]) {
 
     //if (args.debug) { print_data(data, args.size, args.dimensions); }
     jacobi_naive(args, A, B);
-    if (args.debug) { print_data(data, args.size, args.dimensions); }
+    if (args.debug) { print_data(B.elements, args.size, args.dimensions); }
 }
