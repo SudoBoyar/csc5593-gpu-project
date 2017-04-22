@@ -376,11 +376,42 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
     }
 }
 
+void print_data(float *data, int size, int dimensions) {
+    if (size > 13) {
+        cerr << "Data too big to print\n" << endl;
+        return;
+    }
+
+    if (dimensions == 1) {
+        for (int x = 0; x < size; x++) {
+            fprintf(stdout, "%.3f ", data[x]);
+        }
+    } else if (dimensions == 2) {
+        for (int y = 0; y < size; y++) {
+            for (int x = 0; x < size; x++) {
+                fprintf(stdout, "%.3f ", data[y * size + x]);
+            }
+            cout << endl;
+        }
+    } else if (dimensions == 3) {
+        for (int z = 0; z < size; z++) {
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    fprintf(stdout, "%.3f ", data[z * size * size + y * size + x]);
+                }
+                cout << endl;
+            }
+            cout << endl;
+        }
+    }
+    cout << endl << endl;
+}
+
 int main(int argc, char *argv[]) {
     Args args = parse_arguments(argc, argv);
     Matrix A, B;
-    A = initialize_matrix(args.dimensions, size, size, size);
-    B = initialize_matrix(args.dimensions, size, size, size);
+    A = initialize_matrix(args.dimensions, args.size, args.size, args.size);
+    B = initialize_matrix(args.dimensions, args.size, args.size, args.size);
 
     atexit(cleanupCuda);
 
