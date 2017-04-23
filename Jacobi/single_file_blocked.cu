@@ -295,7 +295,7 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
     for (int i = 0; i < PER_THREAD_X; i++) {
         // Issue contiguous reads, e.g. for 4 threads, 2 per thread: do 11|11|22|22 instead of 12|12|12|12
         // => shared[ [0-3] + 4 * [0-1] ]= elements[ [0-3] + 4 * [0-1] + blockStart ]
-        shared[threadCol + threadDim.x * i] = data.elements[threadCol + threadDim.x * i + blockStart];
+        shared[threadCol + threadDim.x * i] = data.elements[threadCol + blockDim.x * i + blockStart];
     }
 
 #pragma unroll
@@ -352,14 +352,14 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
              * Optimizing the width for reads is the responsibility of the calling code.
              */
             // TODO: Index integrity checks for out of tile range.
-            shared[threadCol + threadDim.x * x][threadRow + threadDim.y * y] =
+            shared[threadCol + blockDim.x * x][threadRow + blockDim.y * y] =
                 data.elements[
                     yTileStart + // Y location of tile start in data
                     threadRow * data.width + // Up to the thread's initial row
-                    threadDim.y * y * data.width + // And up again to get to the y'th sub-block
+                    blockDim.y * y * data.width + // And up again to get to the y'th sub-block
                     xTileStart + // X location of tile start in data
                     threadCol + // Over to the initial x position for the thread
-                    threadDim.x * x // And over again to skip to the x'th sub_block
+                    blockDim.x * x // And over again to skip to the x'th sub_block
                 ];
         }
     }
@@ -412,7 +412,7 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     }
 }
 
-__global__ void jacobi3d_naive(float *data) {
+__global__ void jacobi3d(float *data) {
     // TODO
 }
 
