@@ -352,16 +352,6 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result) {
     }
 }
 
-Matrix A;
-A.width = other.width;
-A.height = other.height;
-size_t size = other.width * other.height * sizeof(float);
-cudaMalloc((void**) &A.elements, size);
-if (copy) {
-cudaMemcpy(A.elements, other.elements, size, cudaMemcpyHostToDevice);
-}
-return A;
-
 void jacobi_naive(Args args, Matrix A, Matrix B) {
     Matrix deviceA, deviceB;
 
