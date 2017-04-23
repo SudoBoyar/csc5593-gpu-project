@@ -295,7 +295,7 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
     for (int i = 0; i < PER_THREAD_X; i++) {
         // Issue contiguous reads, e.g. for 4 threads, 2 per thread: do 11|11|22|22 instead of 12|12|12|12
         // => shared[ [0-3] + 4 * [0-1] ]= elements[ [0-3] + 4 * [0-1] + blockStart ]
-        shared[threadCol + threadDim.x * i] = data.elements[threadCol + blockDim.x * i + blockStart];
+        shared[threadCol + blockDim.x * i] = data.elements[threadCol + blockDim.x * i + blockStart];
     }
 
 #pragma unroll
@@ -366,7 +366,7 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
 
 #pragma unroll
     for (int y = 0; y < PER_THREAD_Y; y++) {
-        int globalY = yTileStart + threadRow * data.width + threadDim.y * y * data.width;
+        int globalY = yTileStart + threadRow * data.width + blockDim.y * y * data.width;
         int sharedY = threadRow + blockDim.y * y;
 #pragma unroll
         for (int x = 0; x < PER_THREAD_X; x++) {
@@ -412,7 +412,7 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     }
 }
 
-__global__ void jacobi3d(float *data) {
+__global__ void jacobi3d(Matrix data, Matrix result) {
     // TODO
 }
 
