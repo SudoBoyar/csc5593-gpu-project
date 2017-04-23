@@ -353,7 +353,7 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result) {
 }
 
 void jacobi_naive(Args args, Matrix A, Matrix B) {
-    Matrix deviceA, deviceB;
+    Matrix deviceA, deviceB, temp;
 
     deviceA.width = A.width;
     deviceA.height = A.height;
@@ -375,30 +375,30 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
     cudaMemcpy(deviceB.elements, B.elements, sizeB, cudaMemcpyHostToDevice);
 
     if (args.dimensions == 1) {
-        //dim3 blocks(args.grid_size);
-        //dim3 threads(args.size/args.grid_size);
         dim3 blocks(max(args.size/32, 1));
         dim3 threads(min(args.size, 32));
 
         for (int t = 0; t < args.iterations; t++) {
             jacobi1d_naive<<<blocks, threads>>>(deviceA, deviceB);
+            swap(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
         dim3 blocks(max(args.size/16, 1), max(args.size/16, 1));
         dim3 threads(min(args.size, 16), min(args.size, 16));
         for (int t = 0; t < args.iterations; t++) {
             jacobi2d_naive<<<blocks, threads>>>(deviceA, deviceB);
+            swap(deviceA, deviceB);
         }
     } else {
         dim3 blocks(max(args.size/8, 1), max(args.size/8, 1), max(args.size/8, 1));
         dim3 threads(min(args.size, 8), min(args.size, 8), min(args.size, 8));
         for (int t = 0; t < args.iterations; t++) {
             jacobi3d_naive<<<blocks, threads>>>(deviceA, deviceB);
+            swap(deviceA, deviceB);
         }
     }
 
-    cudaMemcpy(A.elements, deviceA.elements, sizeA, cudaMemcpyDeviceToHost);
-    cudaMemcpy(B.elements, deviceB.elements, sizeB, cudaMemcpyDeviceToHost);
+    cudaMemcpy(B.elements, deviceA.elements, sizeA, cudaMemcpyDeviceToHost);
 }
 
 void print_data(float *data, int size, int dimensions) {
