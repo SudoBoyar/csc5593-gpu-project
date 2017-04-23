@@ -1,15 +1,14 @@
-
 #include <stdio.h>
 #include <iostream>
 #include <unistd.h>
+
+using namespace std;
 
 // Shorthand for formatting and printing usage options to stderr
 #define fpe(msg) fprintf(stderr, "\t%s\n", msg);
 
 // Shorthand for handling CUDA errors.
 #define HANDLE_ERROR(err)  ( HandleError( err, __FILE__, __LINE__ ) )
-
-using namespace std;
 
 /*****************
  * CUDA Utilites *
@@ -200,7 +199,7 @@ typedef struct {
     int height;
     int width;
     int depth;
-    float* elements;
+    float *elements;
 } Matrix;
 
 Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 1) {
@@ -273,6 +272,13 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
  * CUDA KERNELS *
  ****************/
 
+#define TILE_WIDTH = 64
+#define TILE_HEIGHT = 2
+#define TILE_DEPTH = 2
+#define PER_THREAD_X = 2
+#define PER_THREAD_Y = 2
+#define PER_THREAD_Z = 2
+
 __global__ void jacobi1d(Matrix data, Matrix result) {
     int threadCol = threadIdx.x;
     int blockCol = blockIdx.x;
@@ -283,25 +289,25 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
     //int threadStart = threadCol * PER_THREAD;
 
     __shared__ float shared[TILE_WIDTH];
-    float local[PER_THREAD];
+    float local[PER_THREAD_X];
 
 #pragma unroll
-    for (int i = 0; i < PER_THREAD; i++) {
+    for (int i = 0; i < PER_THREAD_X; i++) {
         // Issue contiguous reads, e.g. for 4 threads, 2 per thread: do 11|11|22|22 instead of 12|12|12|12
         // => shared[ [0-3] + 4 * [0-1] ]= elements[ [0-3] + 4 * [0-1] + blockStart ]
         shared[threadCol + threadDim.x * i] = data.elements[threadCol + threadDim.x * i + blockStart];
     }
 
 #pragma unroll
-    for (int i = 0; i < PER_THREAD; i++) {
-        int x = threadCol + i * threadDim.x;
+    for (int i = 0; i < PER_THREAD_X; i++) {
+        int x = threadCol + i * blockDim.x;
         int globalX = x + blockStart;
         if (globalX > 1 && globalX < data.width - 1) {
             local[i] = (shared[x] + shared[x - 1] + shared[x + 1]) / 3;
         } else if (globalX == 0 || globalX == data.width - 1) {
             local[i] = shared[x];
         } else {
-            local[i] = 0.0;
+            // Outside of the bounds
         }
     }
 
@@ -309,7 +315,7 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
 
 #pragma unroll
     for (int i = 0; i < PER_THREAD_X; i++) {
-        int x = threadCol + threadDim.x * i + blockStart;
+        int x = threadCol + blockDim.x * i + blockStart;
         if (x < data.width) {
             result.elements[x] = local[i];
         }
@@ -324,7 +330,7 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
 
     // Tile Starting
     int xTileStart = blockCol * TILE_WIDTH;
-    int yTileStart = blockRow * TILE_HEIGHT;
+    int yTileStart = blockRow * TILE_HEIGHT * data.width;
 
     __shared__ float shared[TILE_WIDTH][TILE_HEIGHT];
     float local[PER_THREAD_X][PER_THREAD_Y];
@@ -361,11 +367,11 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
 #pragma unroll
     for (int y = 0; y < PER_THREAD_Y; y++) {
         int globalY = yTileStart + threadRow * data.width + threadDim.y * y * data.width;
-        int sharedY = threadRow + threadDim.y * y;
+        int sharedY = threadRow + blockDim.y * y;
 #pragma unroll
         for (int x = 0; x < PER_THREAD_X; x++) {
-            int globalX = xTileStart + threadCol + threadDim.x * x;
-            int sharedX = threadCol + x * threadDim.x;
+            int globalX = xTileStart + threadCol + blockDim.x * x;
+            int sharedX = threadCol + x * blockDim.x;
             if (globalX > 0 && globalX < data.width - 1 && globalY > 0 && globalY < data.height - 1) {
                 // Calculate new value
                 local[x][y] =
@@ -380,9 +386,7 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
                 // Edge, do not change.
                 local[x][y] = shared[sharedX][sharedY];
             } else {
-                /* TODO: Test if this is a necessary condition */
-                // Beyond the edge. We should be avoiding it, but just in case.
-                local[x][y] = 0.0;
+                // Beyond the edge
             }
         }
     }
@@ -398,10 +402,10 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
                 result.elements[
                     yTileStart + // Y location of tile start in data
                     threadRow * data.width + // Up to the thread's initial row
-                    threadDim.y * y * data.width + // And up again to get to the y'th sub-block
+                    blockDim.y * y * data.width + // And up again to get to the y'th sub-block
                     xTileStart + // X location of tile start in data
                     threadCol + // Over to the initial x position for the thread
-                    threadDim.x * x // And over again to skip to the x'th sub_block
+                    blockDim.x * x // And over again to skip to the x'th sub_block
                 ] = local[x][y];
             }
         }
@@ -437,7 +441,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
     deviceB = initialize_device(B);
 
     if (args.dimensions == 1) {
-        dim3 blocks(max(args.size/32, 1));
+        dim3 blocks(max(args.size / 32, 1));
         dim3 threads(min(args.size, 32));
 
         for (int t = 0; t < args.iterations; t++) {
@@ -445,14 +449,14 @@ void callKernel(Args args, Matrix A, Matrix B) {
             swap(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
-        dim3 blocks(max(args.size/16, 1), max(args.size/16, 1));
+        dim3 blocks(max(args.size / 16, 1), max(args.size / 16, 1));
         dim3 threads(min(args.size, 16), min(args.size, 16));
         for (int t = 0; t < args.iterations; t++) {
             jacobi2d<<<blocks, threads>>>(deviceA, deviceB);
             swap(deviceA, deviceB);
         }
     } else {
-        dim3 blocks(max(args.size/8, 1), max(args.size/8, 1), max(args.size/8, 1));
+        dim3 blocks(max(args.size / 8, 1), max(args.size / 8, 1), max(args.size / 8, 1));
         dim3 threads(min(args.size, 8), min(args.size, 8), min(args.size, 8));
         for (int t = 0; t < args.iterations; t++) {
             jacobi3d<<<blocks, threads>>>(deviceA, deviceB);
