@@ -377,21 +377,21 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
     if (args.dimensions == 1) {
         //dim3 blocks(args.grid_size);
         //dim3 threads(args.size/args.grid_size);
-        dim3 blocks(args.size/32);
+        dim3 blocks(max(args.size/32, 1));
         dim3 threads(min(args.size, 32));
 
         for (int t = 0; t < args.iterations; t++) {
             jacobi1d_naive<<<blocks, threads>>>(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
-        dim3 blocks(args.size/16, args.size/16);
-        dim3 threads(16, 16);
+        dim3 blocks(max(args.size/16, 1), max(args.size/16, 1));
+        dim3 threads(min(args.size, 16), min(args.size, 16));
         for (int t = 0; t < args.iterations; t++) {
             jacobi2d_naive<<<blocks, threads>>>(deviceA, deviceB);
         }
     } else {
-        dim3 blocks(args.size/8, args.size/8, args.size/8);
-        dim3 threads(8, 8, 8);
+        dim3 blocks(max(args.size/8, 1), max(args.size/8, 1), max(args.size/8, 1));
+        dim3 threads(min(args.size, 8), min(args.size, 8), min(args.size, 8));
         for (int t = 0; t < args.iterations; t++) {
             jacobi3d_naive<<<blocks, threads>>>(deviceA, deviceB);
         }
