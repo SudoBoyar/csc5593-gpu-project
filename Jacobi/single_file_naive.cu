@@ -382,6 +382,8 @@ Matrix initialize_device(Matrix A) {
 
     HANDLE_ERROR(cudaMalloc((void **) &deviceA.elements, sizeA));
     HANDLE_ERROR(cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice));
+
+    return deviceA;
 }
 
 void callKernel(Args args, Matrix A, Matrix B) {
@@ -413,7 +415,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
         }
     }
 
-    cudaMemcpy(B.elements, deviceA.elements, sizeA, cudaMemcpyDeviceToHost);
+    cudaMemcpy(B.elements, deviceA.elements, A.width * A.height * A.depth * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
 void print_data(float *data, int size, int dimensions) {

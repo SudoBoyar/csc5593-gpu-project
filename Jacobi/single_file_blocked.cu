@@ -272,12 +272,12 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
  * CUDA KERNELS *
  ****************/
 
-#define TILE_WIDTH = 64
-#define TILE_HEIGHT = 2
-#define TILE_DEPTH = 2
-#define PER_THREAD_X = 2
-#define PER_THREAD_Y = 2
-#define PER_THREAD_Z = 2
+#define TILE_WIDTH 64
+#define TILE_HEIGHT 2
+#define TILE_DEPTH 2
+#define PER_THREAD_X 2
+#define PER_THREAD_Y 2
+#define PER_THREAD_Z 2
 
 __global__ void jacobi1d(Matrix data, Matrix result) {
     int threadCol = threadIdx.x;
@@ -432,6 +432,8 @@ Matrix initialize_device(Matrix A) {
 
     HANDLE_ERROR(cudaMalloc((void **) &deviceA.elements, sizeA));
     HANDLE_ERROR(cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice));
+
+    return deviceA;
 }
 
 void callKernel(Args args, Matrix A, Matrix B) {
@@ -464,7 +466,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
         }
     }
 
-    cudaMemcpy(B.elements, deviceA.elements, sizeA, cudaMemcpyDeviceToHost);
+    cudaMemcpy(B.elements, deviceA.elements, A.width * A.height * A.depth * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
 // Data output
