@@ -27,7 +27,11 @@ int main(int argc, char *argv[]) {
 
         jacobi_sequential_blocked(data, temp, args.iterations, args.size, args.dimensions, args.xBlockSize,
                                   args.yBlockSize, args.zBlockSize);
-        print = data;
+        if (args.iterations % 2 == 0) {
+            print = data;
+        } else {
+            print = temp;
+        }
     } else if (args.overlapped) {
         float *out = new float[args.alloc_size * (args.tBlockSize - 1)];
         for (int i = 0; i < args.tBlockSize; i++) {
@@ -36,13 +40,21 @@ int main(int argc, char *argv[]) {
 
         jacobi_sequential_overlapped(data, out, args.iterations, args.size, args.dimensions, args.tBlockSize,
                                      args.xBlockSize, args.yBlockSize, args.zBlockSize);
-        print = out;
+        if (args.iterations % 2 == 0) {
+            print = data;
+        } else {
+            print = out;
+        }
     } else {
         float *temp = new float[args.alloc_size];
         initialize_data(temp, args.size, args.dimensions);
 
         jacobi_sequential(data, temp, args.iterations, args.size, args.dimensions);
-        print = temp;
+        if (args.iterations % 2 == 0) {
+            print = data;
+        } else {
+            print = temp;
+        }
     }
     if (args.debug) { print_data(print, args.size, args.dimensions); }
 }
