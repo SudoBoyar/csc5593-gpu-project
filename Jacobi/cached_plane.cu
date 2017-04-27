@@ -260,54 +260,6 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
     return data;
 }
 
-__global__ void jacobi1d_naive(Matrix data, Matrix result) {
-    int id = blockIdx.x * blockDim.x + threadIdx.x;
-    float newValue;
-
-    if (id > 0 && id < data.width - 1) {
-        newValue = (data.elements[id - 1] + data.elements[id] + data.elements[id + 1]) / 3;
-        __syncthreads();
-        result.elements[id] = newValue;
-    } else {
-        // Edge or outside completely, do not change.
-        __syncthreads();
-    }
-}
-
-__global__ void jacobi2d_naive(Matrix data, Matrix result) {
-    int threadRow = threadIdx.y;
-    int threadCol = threadIdx.x;
-    int blockRow = blockIdx.y;
-    int blockCol = blockIdx.x;
-
-    int x = blockCol * blockDim.x + threadCol;
-    int y = blockRow * blockDim.y + threadRow;
-
-    int index = x + y * data.width;
-    int xPrev = (x - 1) + y * data.width;
-    int xNext = (x + 1) + y * data.width;
-    int yPrev = x + (y - 1) * data.width;
-    int yNext = x + (y + 1) * data.width;
-
-    float newValue;
-
-    if (x > 0 && x < data.width - 1 && y > 0 && y < data.height - 1) {
-        newValue =
-            (
-                data.elements[index] +
-                data.elements[xPrev] +
-                data.elements[xNext] +
-                data.elements[yPrev] +
-                data.elements[yNext]
-            ) * 0.2;
-        __syncthreads();
-        result.elements[index] = newValue;
-    } else {
-        // Edge or beyond, do not change.
-        __syncthreads();
-    }
-}
-
 __global__ void jacobi3d_naive(Matrix data, Matrix result) {
     int threadDep = threadIdx.z;
     int threadRow = threadIdx.y;
@@ -381,30 +333,13 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
     cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice);
     cudaMemcpy(deviceB.elements, B.elements, sizeB, cudaMemcpyHostToDevice);
 
-    if (args.dimensions == 1) {
-        dim3 blocks(max(args.size/32, 1));
-        dim3 threads(min(args.size, 32));
+    int  z_size = max(args.size/8, 1);
 
-        for (int t = 0; t < args.iterations; t++) {
-            jacobi1d_naive<<<blocks, threads>>>(deviceA, deviceB);
-            swap(deviceA, deviceB);
-        }
-    } else if (args.dimensions == 2) {
-        dim3 blocks(max(args.size/16, 1), max(args.size/16, 1));
-        dim3 threads(min(args.size, 16), min(args.size, 16));
-        for (int t = 0; t < args.iterations; t++) {
-            jacobi2d_naive<<<blocks, threads>>>(deviceA, deviceB);
-            swap(deviceA, deviceB);
-        }
-    } else {
-	int  z_size = max(args.size/8, 1);
-
-        dim3 blocks(1,max(args.size/8, 1), max(args.size/8, 1));
-        dim3 threads(1, min(args.size, 8), min(args.size, 8));
-        for (int t = 0; t < args.iterations; t++) {
-	    jacobi3d_naive<<<blocks, threads>>>(deviceA, deviceB);
-            swap(deviceA, deviceB);
-        }
+    dim3 blocks(1,max(args.size/8, 1), max(args.size/8, 1));
+    dim3 threads(1, min(args.size, 8), min(args.size, 8));
+    for (int t = 0; t < args.iterations; t++) {
+	   jacobi3d_naive<<<blocks, threads>>>(deviceA, deviceB);
+           swap(deviceA, deviceB);
     }
 
     cudaMemcpy(B.elements, deviceA.elements, sizeA, cudaMemcpyDeviceToHost);
