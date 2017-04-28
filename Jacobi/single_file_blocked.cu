@@ -408,61 +408,43 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
              * Optimizing the width for reads is the responsibility of the calling code.
              */
             shared[sharedY[y]][sharedX[x]] = data.elements[globalIndex[y][x]];
-//            printf("BEFORE: %d %d %d %d %.3f %d\n", x, y, sharedX[x], sharedY[y], local[y][x], globalIndex[y][x]);
-//            float val = data.elements[globalIndex[y][x]];
-//            shared[sharedY[y]][sharedX[x]] = val;
-//            printf("READ %.3f FROM GLOBAL\n", val, )
-//            printf("AFTER: %d %d %d %d %.3f %.3f\n", x, y, sharedX[x], sharedY[y], local[y][x], val);
-//            shared[sharedY[y]][sharedX[x]] = local[y][x];
-//            printf("WROTE %.3f TO SHARED\n", local[y][x]);
-
-//            shared[sharedY[y]][sharedX[x]] = data.elements[globalIndex[y][x]];
         }
     }
 
     __syncthreads();
-//
-//    if (threadIdx.x == 0 && threadIdx.y == 0) {
-//        for (int y = 0; y < TILE_HEIGHT; y++) {
-//            for (int x = 0; x < TILE_WIDTH; x++) {
-//                printf("%d %d %.3f\n", x, y, shared[y][x]);
-//            }
-////            printf("\\\\\n");
-//        }
-//    }
 
     /*
      * Calculate Values
      */
 //#pragma unroll
-//    for (int y = 0; y < PER_THREAD_Y; y++) {
-//        int globY = globalY[y];
-//        int sharY = sharedY[y];
+    for (int y = 0; y < PER_THREAD_Y; y++) {
+        int globY = globalY[y];
+        int sharY = sharedY[y];
 //#pragma unroll
-//        for (int x = 0; x < PER_THREAD_X; x++) {
-//            int globX = globalX[x];
-//            int sharX = sharedX[x];
-//
-//            if (globX > 0 && globX < data.width - 1 && globY > 0 && globY < data.height - 1) {
-//                // Calculate new value
-//                local[y][x] =
-//                    (
-//                        shared[sharY][sharX - 1] +
-//                        shared[sharY][sharX] +
-//                        shared[sharY][sharX + 1] +
-//                        shared[sharY - 1][sharX] +
-//                        shared[sharY + 1][sharX]
-//                    ) * 0.2;
-////                printf("Calculated %.3f\n", local[y][x]);
-//            } else if (globX == 0 || globX == data.width - 1 || globY == 0 || globY == data.height - 1) {
-//                // On the edge
-//                local[y][x] = shared[sharY][sharX];
-//            } else {
-//                // Beyond the edge
+        for (int x = 0; x < PER_THREAD_X; x++) {
+            int globX = globalX[x];
+            int sharX = sharedX[x];
+
+            if (globX > 0 && globX < data.width - 1 && globY > 0 && globY < data.height - 1) {
+                // Calculate new value
+                local[y][x] =
+                    (
+                        shared[sharY][sharX - 1] +
+                        shared[sharY][sharX] +
+                        shared[sharY][sharX + 1] +
+                        shared[sharY - 1][sharX] +
+                        shared[sharY + 1][sharX]
+                    ) * 0.2;
+//                printf("Calculated %.3f\n", local[y][x]);
+            } else if (globX == 0 || globX == data.width - 1 || globY == 0 || globY == data.height - 1) {
+                // On the edge
+                local[y][x] = shared[sharY][sharX];
+            } else {
+                // Beyond the edge
 //                printf("Beyond the edge %d %d %d %d %d %d %d %d\n", threadIdx.x, threadIdx.y, globalX[x], globalY[y], sharedX[x], sharedY[y], x, y);
-//            }
-//        }
-//    }
+            }
+        }
+    }
 
     __syncthreads();
 
