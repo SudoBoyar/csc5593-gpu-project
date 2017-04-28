@@ -309,8 +309,6 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result, int z_size) {
            __syncthreads();
 		}
 	//	printf("blockDim.x = %d, gridDim.x = %d\n",blockDim.x,gridDim.x);
-//		x += blockDim.x*gridDim.x;
-//		y += blockDim.y*gridDim.x;
 		z += 1;
     }
 }
