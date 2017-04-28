@@ -260,7 +260,7 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
     return data;
 }
 
-__global__ void jacobi3d_naive(Matrix data, Matrix result) {
+__global__ void jacobi3d_naive(Matrix data, Matrix result, int z_size) {
     int threadDep = threadIdx.z;
     int threadRow = threadIdx.y;
     int threadCol = threadIdx.x;
@@ -286,33 +286,35 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result) {
 
     float newValue;
     
-    while(x+y+z < MAX_THREADS){
-
-	if (x > 0 && x < data.width - 1 && y > 0 && y < data.height - 1 && z > 0 && z < data.depth - 1) {
-                newValue =
-                    (
-                        data.elements[index] +
-                        data.elements[xPrev] +
-                        data.elements[xNext] +
-                        data.elements[yPrev] +
-                        data.elements[yNext] +
-   	                data.elements[zPrev] +
-                        data.elements[zNext]
-                     ) / 7;
-                __syncthreads();
-                result.elements[index] = newValue;
-        } else {
+	printf("x=%d, y=%d, z=%d, x+y+z = %d\n",x,y,z,x+y+z);
+    while((x+y+z) < MAX_THREADS && z < z_size){
+		printf("x=%d, y=%d, z=%d, x+y+z = %d\n",x,y,z,x+y+z);
+		if (x > 0 && x < data.width - 1 && y > 0 && y < data.height - 1 && z > 0 && z < data.depth - 1) {
+			newValue =
+			(
+				data.elements[index] +
+				data.elements[xPrev] +
+				data.elements[xNext] +
+				data.elements[yPrev] +
+				data.elements[yNext] + 
+				data.elements[zPrev] +
+				data.elements[zNext]
+				) / 7;
+			__syncthreads();
+			result.elements[index] = newValue;
+		} else {
         // Edge or beyond, do not change.
            __syncthreads();
-        }
-	x += blockDim.x*gridDim.x;
-	y += blockDim.y*gridDim.x;
-	z += 1;
+		}
+		printf("blockDim.x = %d, gridDim.x = %d\n",blockDim.x,gridDim.x);
+		x += blockDim.x*gridDim.x;
+		y += blockDim.y*gridDim.x;
+		z += 1;
     }
 }
 
 void jacobi_naive(Args args, Matrix A, Matrix B) {
-    Matrix deviceA, deviceB, temp;
+    Matrix deviceA, deviceB;
 
     deviceA.width = A.width;
     deviceA.height = A.height;
@@ -333,12 +335,12 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
     cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice);
     cudaMemcpy(deviceB.elements, B.elements, sizeB, cudaMemcpyHostToDevice);
 
-    int  z_size = max(args.size/8, 1);
+    int  z_size = max(args.size/8, 8);
 
-    dim3 blocks(1,max(args.size/8, 1), max(args.size/8, 1));
-    dim3 threads(1, min(args.size, 8), min(args.size, 8));
+    dim3 blocks(max(args.size/8, 1), max(args.size/8, 1));
+    dim3 threads( min(args.size, 8), min(args.size, 8), 1);
     for (int t = 0; t < args.iterations; t++) {
-	   jacobi3d_naive<<<blocks, threads>>>(deviceA, deviceB);
+	   jacobi3d_naive<<<blocks, threads>>>(deviceA, deviceB, z_size);
            swap(deviceA, deviceB);
     }
 
