@@ -272,7 +272,7 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
  * CUDA KERNELS *
  ****************/
 
-#define TILE_WIDTH 64
+#define TILE_WIDTH 4
 #define TILE_HEIGHT 2
 #define TILE_DEPTH 2
 #define PER_THREAD_X 2
@@ -328,13 +328,69 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     int blockRow = blockIdx.y;
     int blockCol = blockIdx.x;
 
-    // Tile Starting
-    int xTileStart = blockCol * TILE_WIDTH;
-    int yTileStart = blockRow * TILE_HEIGHT * data.width;
+    // Indexes so we don't have to recompute them.
+    int globalIndex[PER_THREAD_Y][PER_THREAD_X];
+    int globalX[PER_THREAD_X];
+    int globalY[PER_THREAD_Y];
+    int sharedX[PER_THREAD_X];
+    int sharedY[PER_THREAD_Y];
 
-    __shared__ float shared[TILE_WIDTH][TILE_HEIGHT];
-    float local[PER_THREAD_X][PER_THREAD_Y];
+    // Shared and local data arrays
+    __shared__ float shared[TILE_HEIGHT][TILE_WIDTH];
+    float local[PER_THREAD_Y][PER_THREAD_X];
 
+    /*
+     * Calculate indexes into the global and shared arrays
+     */
+
+    // X shared and global
+#pragma unroll
+    for (int x = 0; x < PER_THREAD_X; x++) {
+        sharedX[x] = threadCol + blockDim.x * x;
+        globalX[x] = blockCol * TILE_WIDTH + sharedX[x];
+    }
+
+    // Y shared and global
+#pragma unroll
+    for (int y = 0; y < PER_THREAD_Y; y++) {
+        sharedY[y] = threadRow + blockDim.y * y;
+        globalY[y] = blockRow * TILE_HEIGHT + sharedY[y];
+    }
+
+    // Global absolute index
+#pragma unroll
+    for (int y = 0; y < PER_THREAD_Y; y++) {
+#pragma unroll
+        for (int x = 0; x < PER_THREAD_X; x++) {
+            globalIndex[y][x] = globalX[x] + globalY[y] * data.width;
+            local[y][x] = (float)globalIndex[y][x];
+        }
+    }
+
+//    if (threadCol == blockDim.x - 1 && threadRow == blockDim.y - 1) {
+//        printf("Block Dims: %d %d\n", blockDim.x, blockDim.y);
+//        printf("Shared:\n");
+//
+//#pragma unroll
+//        for (int y = 0; y < PER_THREAD_Y; y++) {
+//#pragma unroll
+//            for (int x = 0; x < PER_THREAD_X; x++) {
+//                printf("%d %d\n", sharedX[x], sharedY[y]);
+//            }
+//        }
+//
+//        printf("Global:\n");
+//#pragma unroll
+//        for (int y = 0; y < PER_THREAD_Y; y++) {
+//#pragma unroll
+//            for (int x = 0; x < PER_THREAD_X; x++) {
+//                printf("%d %d %d\n", globalX[x], globalY[y], globalIndex[y][x]);
+//            }
+//        }
+//    }
+    /*
+     * Copy into shared memory
+     */
 #pragma unroll
     for (int y = 0; y < PER_THREAD_Y; y++) {
 #pragma unroll
@@ -351,62 +407,71 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
              *
              * Optimizing the width for reads is the responsibility of the calling code.
              */
-            // TODO: Index integrity checks for out of tile range.
-            //int tmp = yTileStart + // Y location of tile start in data
-            //          threadRow * data.width + // Up to the thread's initial row
-            //          blockDim.y * y * data.width + // And up again to get to the y'th sub-block
-            //          xTileStart + // X location of tile start in data
-            //          threadCol + // Over to the initial x position for the thread
-            //          blockDim.x * x; // And over again to skip to the x'th sub_block;
-            //printf("%d %d %d %d %d\n", x, y, threadCol, threadRow, tmp);
-            shared[threadCol + blockDim.x * x][threadRow + blockDim.y * y] =
-                data.elements[
-                    yTileStart + // Y location of tile start in data
-                    threadRow * data.width + // Up to the thread's initial row
-                    blockDim.y * y * data.width + // And up again to get to the y'th sub-block
-                    xTileStart + // X location of tile start in data
-                    threadCol + // Over to the initial x position for the thread
-                    blockDim.x * x // And over again to skip to the x'th sub_block
-                ];
-        }
-    }
+            shared[sharedY[y]][sharedX[x]] = data.elements[globalIndex[y][x]];
+//            printf("BEFORE: %d %d %d %d %.3f %d\n", x, y, sharedX[x], sharedY[y], local[y][x], globalIndex[y][x]);
+//            float val = data.elements[globalIndex[y][x]];
+//            shared[sharedY[y]][sharedX[x]] = val;
+//            printf("READ %.3f FROM GLOBAL\n", val, )
+//            printf("AFTER: %d %d %d %d %.3f %.3f\n", x, y, sharedX[x], sharedY[y], local[y][x], val);
+//            shared[sharedY[y]][sharedX[x]] = local[y][x];
+//            printf("WROTE %.3f TO SHARED\n", local[y][x]);
 
-#pragma unroll
-    for (int y = 0; y < PER_THREAD_Y; y++) {
-        int globalY = yTileStart + threadRow * data.width + blockDim.y * y * data.width;
-        int sharedY = threadRow + blockDim.y * y;
-#pragma unroll
-        for (int x = 0; x < PER_THREAD_X; x++) {
-            int globalX = xTileStart + threadCol + blockDim.x * x;
-            int sharedX = threadCol + x * blockDim.x;
-            if (globalX > 0 && globalX < data.width - 1 && globalY > 0 && globalY < data.height - 1) {
-                // Calculate new value
-                local[x][y] =
-                    (
-                        shared[sharedX][sharedY] +
-                        shared[sharedX - 1][sharedY] +
-                        shared[sharedX + 1][sharedY] +
-                        shared[sharedX][sharedY - 1] +
-                        shared[sharedX][sharedY + 1]
-                    ) * 0.2;
-            } else {
-                // Beyond the edge
-            }
+//            shared[sharedY[y]][sharedX[x]] = data.elements[globalIndex[y][x]];
         }
     }
 
     __syncthreads();
+//
+//    if (threadIdx.x == 0 && threadIdx.y == 0) {
+//        for (int y = 0; y < TILE_HEIGHT; y++) {
+//            for (int x = 0; x < TILE_WIDTH; x++) {
+//                printf("%d %d %.3f\n", x, y, shared[y][x]);
+//            }
+////            printf("\\\\\n");
+//        }
+//    }
 
+    /*
+     * Calculate Values
+     */
+//#pragma unroll
+//    for (int y = 0; y < PER_THREAD_Y; y++) {
+//        int globY = globalY[y];
+//        int sharY = sharedY[y];
+//#pragma unroll
+//        for (int x = 0; x < PER_THREAD_X; x++) {
+//            int globX = globalX[x];
+//            int sharX = sharedX[x];
+//
+//            if (globX > 0 && globX < data.width - 1 && globY > 0 && globY < data.height - 1) {
+//                // Calculate new value
+//                local[y][x] =
+//                    (
+//                        shared[sharY][sharX - 1] +
+//                        shared[sharY][sharX] +
+//                        shared[sharY][sharX + 1] +
+//                        shared[sharY - 1][sharX] +
+//                        shared[sharY + 1][sharX]
+//                    ) * 0.2;
+////                printf("Calculated %.3f\n", local[y][x]);
+//            } else if (globX == 0 || globX == data.width - 1 || globY == 0 || globY == data.height - 1) {
+//                // On the edge
+//                local[y][x] = shared[sharY][sharX];
+//            } else {
+//                // Beyond the edge
+//                printf("Beyond the edge %d %d %d %d %d %d %d %d\n", threadIdx.x, threadIdx.y, globalX[x], globalY[y], sharedX[x], sharedY[y], x, y);
+//            }
+//        }
+//    }
 
-#pragma unroll
+    __syncthreads();
+
+//#pragma unroll
     for (int y = 0; y < PER_THREAD_Y; y++) {
-        int globalY = yTileStart + threadRow * data.width + blockDim.y * y * data.width;
-#pragma unroll
+//#pragma unroll
         for (int x = 0; x < PER_THREAD_X; x++) {
-            int globalX = xTileStart + threadCol + blockDim.x * x;
-            if (globalX > 0 && globalX < data.width - 1 && globalY > 0 && globalY < data.height - 1) {
-                result.elements[globalY + globalX] = local[x][y];
-            }
+            printf("Writing %.3f to %d\n", local[y][x], globalIndex[y][x]);
+            result.elements[globalIndex[y][x]] = local[y][x];
         }
     }
 }
@@ -419,7 +484,7 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
  * END CUDA KERNELS *
  ********************/
 
-Matrix initialize_device(Matrix A) {
+Matrix initialize_device(Matrix A, bool copyToDevice) {
     Matrix deviceA;
 
     deviceA.width = A.width;
@@ -430,7 +495,9 @@ Matrix initialize_device(Matrix A) {
     size_t sizeA = A.width * A.height * A.depth * sizeof(float);
 
     HANDLE_ERROR(cudaMalloc((void **) &deviceA.elements, sizeA));
-    HANDLE_ERROR(cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice));
+    if (copyToDevice) {
+        HANDLE_ERROR(cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice));
+    }
 
     return deviceA;
 }
@@ -438,8 +505,8 @@ Matrix initialize_device(Matrix A) {
 void callKernel(Args args, Matrix A, Matrix B) {
     Matrix deviceA, deviceB;
 
-    deviceA = initialize_device(A);
-    deviceB = initialize_device(B);
+    deviceA = initialize_device(A, true);
+    deviceB = initialize_device(B, false);
 
     if (args.dimensions == 1) {
         dim3 blocks(max(args.size / (args.xBlockSize / PER_THREAD_X) , 1));
@@ -450,24 +517,23 @@ void callKernel(Args args, Matrix A, Matrix B) {
             swap(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
-        //dim3 blocks(max(args.size / 16, 1), max(args.size / 16, 1));
-        //dim3 threads(min(args.size, 16), min(args.size, 16));
-        dim3 blocks(max(args.size / (args.xBlockSize/PER_THREAD_X), 1), max(args.size / (args.yBlockSize/PER_THREAD_Y), 1));
-        dim3 threads(args.xBlockSize, args.yBlockSize);
+        dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1));
+        dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y);
         for (int t = 0; t < args.iterations; t++) {
             jacobi2d<<<blocks, threads>>>(deviceA, deviceB);
+            checkCUDAError("jacobi2d", true);
             swap(deviceA, deviceB);
         }
     } else {
-        dim3 blocks(max(args.size / 8, 1), max(args.size / 8, 1), max(args.size / 8, 1));
-        dim3 threads(min(args.size, 8), min(args.size, 8), min(args.size, 8));
+        dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1), max(args.size / TILE_DEPTH, 1));
+        dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y, TILE_DEPTH / PER_THREAD_Z);
         for (int t = 0; t < args.iterations; t++) {
             jacobi3d<<<blocks, threads>>>(deviceA, deviceB);
             swap(deviceA, deviceB);
         }
     }
 
-    cudaMemcpy(B.elements, deviceA.elements, A.width * A.height * A.depth * sizeof(float), cudaMemcpyDeviceToHost);
+    HANDLE_ERROR(cudaMemcpy(B.elements, deviceA.elements, A.width * A.height * A.depth * sizeof(float), cudaMemcpyDeviceToHost));
 }
 
 // Data output
