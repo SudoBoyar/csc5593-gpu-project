@@ -426,11 +426,11 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     /*
      * Calculate Values
      */
-//#pragma unroll
+#pragma unroll
     for (int y = 0; y < PER_THREAD_Y; y++) {
         int globY = globalY[y];
         int sharY = sharedY[y];
-//#pragma unroll
+#pragma unroll
         for (int x = 0; x < PER_THREAD_X; x++) {
             int globX = globalX[x];
             int sharX = sharedX[x];
@@ -449,16 +449,16 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
                 // On the edge
                 local[y][x] = shared[sharY][sharX];
             } else {
-                // Beyond the edge
+                // Beyond the edge, shouldn't ever hit this unless we messed something up
             }
         }
     }
 
     __syncthreads();
 
-//#pragma unroll
+#pragma unroll
     for (int y = 0; y < PER_THREAD_Y; y++) {
-//#pragma unroll
+#pragma unroll
         for (int x = 0; x < PER_THREAD_X; x++) {
             result.elements[globalIndex[y][x]] = local[y][x];
         }
