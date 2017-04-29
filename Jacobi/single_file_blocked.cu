@@ -626,13 +626,13 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
                     // Calculate new value
                     local[z][y][x] =
                         (
-                            shared[sharz][sharY][sharX] +
-                            shared[sharz][sharY][sharX - 1] +
-                            shared[sharz][sharY][sharX + 1] +
-                            shared[sharz][sharY - 1][sharX] +
-                            shared[sharz][sharY + 1][sharX] +
-                            shared[sharz - 1][sharY][sharX] +
-                            shared[sharz + 1][sharY][sharX]
+                            shared[sharZ][sharY][sharX] +
+                            shared[sharZ][sharY][sharX - 1] +
+                            shared[sharZ][sharY][sharX + 1] +
+                            shared[sharZ][sharY - 1][sharX] +
+                            shared[sharZ][sharY + 1][sharX] +
+                            shared[sharZ - 1][sharY][sharX] +
+                            shared[sharZ + 1][sharY][sharX]
                         ) / 7;
                 } else if (globX == 0 || globX == data.width - 1 || globY == 0 || globY == data.height - 1 || globZ == 0 || globZ == data.depth - 1) {
                     // On the edge
