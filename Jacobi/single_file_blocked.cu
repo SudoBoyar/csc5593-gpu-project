@@ -466,7 +466,196 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
 }
 
 __global__ void jacobi3d(Matrix data, Matrix result) {
-    // TODO
+    int threadCol = threadIdx.x;
+    int threadRow = threadIdx.y;
+    int threadDep = threadIdx.z;
+    int blockCol = blockIdx.x;
+    int blockRow = blockIdx.y;
+    int blockDep = blockIdx.z;
+
+    // Indexes so we don't have to recompute them.
+    int globalIndex[PER_THREAD_Z][PER_THREAD_Y][PER_THREAD_X];
+    int globalX[PER_THREAD_X];
+    int globalY[PER_THREAD_Y];
+    int globalZ[PER_THREAD_Z];
+    int sharedX[PER_THREAD_X];
+    int sharedY[PER_THREAD_Y];
+    int sharedZ[PER_THREAD_Z];
+
+    // Shared and local data arrays
+    __shared__ float shared[TILE_DEPTH + 2][TILE_HEIGHT + 2][TILE_WIDTH + 2];
+    float local[PER_THREAD_Z][PER_THREAD_Y][PER_THREAD_X];
+
+    /*
+     * Calculate indexes into the global and shared arrays
+     */
+
+    // X shared and global
+#pragma unroll
+    for (int x = 0; x < PER_THREAD_X; x++) {
+        sharedX[x] = threadCol + blockDim.x * x + 1;
+        globalX[x] = blockCol * TILE_WIDTH + sharedX[x] - 1;
+    }
+
+    // Y shared and global
+#pragma unroll
+    for (int y = 0; y < PER_THREAD_Y; y++) {
+        sharedY[y] = threadRow + blockDim.y * y + 1;
+        globalY[y] = blockRow * TILE_HEIGHT + sharedY[y] - 1;
+    }
+
+    // Z shared and global
+#pragma unroll
+    for (int z = 0; z < PER_THREAD_Z; z++) {
+        sharedZ[z] = threadDep + blockDim.z * z + 1;
+        globalZ[z] = blockDep * TILE_DEPTH + sharedZ[z] - 1;
+    }
+
+    // Global absolute index
+#pragma unroll
+    for (int z = 0; z < PER_THREAD_Z; z++) {
+        int zTemp = globalZ[z] * data.width * data.height;
+#pragma unroll
+        for (int y = 0; y < PER_THREAD_Y; y++) {
+            int yTemp = globalY[y] * data.width;
+#pragma unroll
+            for (int x = 0; x < PER_THREAD_X; x++) {
+                globalIndex[z][y][x] = globalX[x] + yTemp + zTemp;
+            }
+        }
+    }
+
+    /*
+     * Copy into shared memory
+     */
+#pragma unroll
+    for (int z = 0; z < PER_THREAD_Z; z++) {
+#pragma unroll
+        for (int y = 0; y < PER_THREAD_Y; y++) {
+#pragma unroll
+            for (int x = 0; x < PER_THREAD_X; x++) {
+                shared[sharedZ[z]][sharedY[y]][sharedX[x]] = data.elements[globalIndex[z][y][x]];
+            }
+        }
+    }
+
+    // Copy below-block dependencies into shared memory
+    if (threadRow == 0 && blockRow > 0) {
+#pragma unroll
+        for (int z = 0; z < PER_THREAD_Z; z++) {
+#pragma unroll
+            for (int x = 0; x < PER_THREAD_X; x++) {
+                shared[sharedZ[z]][0][sharedX[x]] = data.elements[globalIndex[z][0][x] - data.width];
+            }
+        }
+    }
+
+    // Copy above-block dependencies into shared memory
+    if (threadRow == blockDim.y - 1 && (blockRow + 1) * TILE_HEIGHT < data.height - 1) {
+#pragma unroll
+        for (int z = 0; z < PER_THREAD_Z; z++) {
+#pragma unroll
+            for (int x = 0; x < PER_THREAD_X; x++) {
+                shared[sharedZ[z]][TILE_HEIGHT + 1][sharedX[x]] = data.elements[globalIndex[z][PER_THREAD_Y - 1][x] + data.width];
+            }
+        }
+    }
+
+    // Copy left-of-block dependencies into shared memory
+    if (threadCol == 0 && blockCol > 0) {
+#pragma unroll
+        for (int z = 0; z < PER_THREAD_Z; z++) {
+#pragma unroll
+            for (int y = 0; y < PER_THREAD_Y; y++) {
+                shared[sharedZ[z]][sharedY[y]][0] = data.elements[globalIndex[z][y][0] - 1];
+            }
+        }
+    }
+
+    // Copy right-of-block dependencies into shared memory
+    if (threadCol == blockDim.x - 1 && (blockCol + 1) * TILE_WIDTH < data.width) {
+#pragma unroll
+        for (int z = 0; z < PER_THREAD_Z; z++) {
+#pragma unroll
+            for (int y = 0; y < PER_THREAD_Y; y++) {
+                shared[sharedZ[z]][sharedY[y]][TILE_WIDTH + 1] = data.elements[globalIndex[z][y][PER_THREAD_X - 1] + 1];
+            }
+        }
+    }
+
+    // Copy in-front-of-block dependencies into shared memory
+    if (threadDep == 0 && blockDep > 0) {
+#pragma unroll
+        for (int y = 0; y < PER_THREAD_Y; y++) {
+#pragma unroll
+            for (int x = 0; x < PER_THREAD_X; x++) {
+                shared[0][sharedY[y]][sharedX[x]] = data.elements[globalIndex[0][y][x] - data.width * data.height];
+            }
+        }
+    }
+
+    // Copy behind-block dependencies into shared memory
+    if (threadDep == blockDim.z - 1 && (blockDep + 1) * TILE_DEPTH < data.depth) {
+#pragma unroll
+        for (int y = 0; y < PER_THREAD_Y; y++) {
+#pragma unroll
+            for (int x = 0; x < PER_THREAD_X; x++) {
+                shared[TILE_DEPTH + 1][sharedY[y]][sharedX[x]] = data.elements[globalIndex[PER_THREAD_Z - 1][y][x] + data.width * data.height];
+            }
+        }
+    }
+
+    __syncthreads();
+
+    /*
+     * Calculate Values
+     */
+    for (int z = 0; z < PER_THREAD_Z; z++) {
+        int globZ = globalZ[z];
+        int sharZ = sharedZ[z];
+#pragma unroll
+        for (int y = 0; y < PER_THREAD_Y; y++) {
+            int globY = globalY[y];
+            int sharY = sharedY[y];
+#pragma unroll
+            for (int x = 0; x < PER_THREAD_X; x++) {
+                int globX = globalX[x];
+                int sharX = sharedX[x];
+
+                if (globX > 0 && globX < data.width - 1 && globY > 0 && globY < data.height - 1 && globZ > 0 && globZ < data.depth - 1) {
+                    // Calculate new value
+                    local[z][y][x] =
+                        (
+                            shared[sharz][sharY][sharX] +
+                            shared[sharz][sharY][sharX - 1] +
+                            shared[sharz][sharY][sharX + 1] +
+                            shared[sharz][sharY - 1][sharX] +
+                            shared[sharz][sharY + 1][sharX] +
+                            shared[sharz - 1][sharY][sharX] +
+                            shared[sharz + 1][sharY][sharX]
+                        ) / 7;
+                } else if (globX == 0 || globX == data.width - 1 || globY == 0 || globY == data.height - 1 || globZ == 0 || globZ == data.depth - 1) {
+                    // On the edge
+                    local[z][y][x] = shared[sharZ][sharY][sharX];
+                } else {
+                    // Beyond the edge, shouldn't ever hit this unless we messed something up
+                }
+            }
+        }
+    }
+
+    __syncthreads();
+
+#pragma unroll
+    for (int z = 0; z < PER_THREAD_Z; z++) {
+#pragma unroll
+        for (int y = 0; y < PER_THREAD_Y; y++) {
+#pragma unroll
+            for (int x = 0; x < PER_THREAD_X; x++) {
+                result.elements[globalIndex[y][x]] = local[y][x];
+            }
+        }
+    }
 }
 
 /********************
