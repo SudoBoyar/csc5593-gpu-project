@@ -652,7 +652,7 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
         for (int y = 0; y < PER_THREAD_Y; y++) {
 #pragma unroll
             for (int x = 0; x < PER_THREAD_X; x++) {
-                result.elements[globalIndex[y][x]] = local[y][x];
+                result.elements[globalIndex[z][y][x]] = local[z][y][x];
             }
         }
     }
