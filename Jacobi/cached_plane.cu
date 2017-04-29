@@ -7,7 +7,7 @@
 #define fpe(msg) fprintf(stderr, "\t%s\n", msg);
 
 #define HANDLE_ERROR(err)  ( HandleError( err, __FILE__, __LINE__ ) )
-#define MAX_THREADS (33 * 1024)
+#define MAX_THREADS (65536 * 1024)
 
 using namespace std;
 
@@ -270,14 +270,14 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result, int z_size) {
 
     int x = blockCol * blockDim.x + threadCol;
     int y = blockRow * blockDim.y + threadRow;
-    int z = blockDep * blockDim.z + threadDep;
+	int z = blockDep * blockDim.z + threadDep;
 
     int xySurface = data.width * data.height;
     int yTemp = y * data.width;
 
 	int zTemp, index, xPrev, xNext, yPrev, yNext, zPrev, zNext; 
 
-    float newValue;
+	float newValue;
     
 //	printf("z=%d, x+y+z = %d\n",x,y,z,x+y+z);
     while((x+y+z) < MAX_THREADS && z < z_size){
