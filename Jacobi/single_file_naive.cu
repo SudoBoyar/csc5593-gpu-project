@@ -3,12 +3,17 @@
 #include <iostream>
 #include <unistd.h>
 
-// Shorthand for formatting usage options
+// Shorthand for formatting and printing usage options to stderr
 #define fpe(msg) fprintf(stderr, "\t%s\n", msg);
 
+// Shorthand for handling CUDA errors.
 #define HANDLE_ERROR(err)  ( HandleError( err, __FILE__, __LINE__ ) )
 
 using namespace std;
+
+/*****************
+ * CUDA Utilites *
+ *****************/
 
 void HandleError(cudaError_t err, const char *file, int line) {
     //
@@ -48,6 +53,10 @@ void cleanupCuda(void) {
         cudaThreadExit()
     );
 }
+
+/*********************
+ * End CUDA Utilites *
+ *********************/
 
 struct Args {
     bool debug = false;
@@ -253,13 +262,18 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
             }
         }
     } else {
-        // Bad data
+        fprintf(stderr, "Improper dimension or size.");
+        exit(1);
     }
 
     return data;
 }
 
-__global__ void jacobi1d_naive(Matrix data, Matrix result) {
+/****************
+ * CUDA KERNELS *
+ ****************/
+
+__global__ void jacobi1d(Matrix data, Matrix result) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     float newValue;
 
@@ -273,7 +287,7 @@ __global__ void jacobi1d_naive(Matrix data, Matrix result) {
     }
 }
 
-__global__ void jacobi2d_naive(Matrix data, Matrix result) {
+__global__ void jacobi2d(Matrix data, Matrix result) {
     int threadRow = threadIdx.y;
     int threadCol = threadIdx.x;
     int blockRow = blockIdx.y;
@@ -307,7 +321,7 @@ __global__ void jacobi2d_naive(Matrix data, Matrix result) {
     }
 }
 
-__global__ void jacobi3d_naive(Matrix data, Matrix result) {
+__global__ void jacobi3d(Matrix data, Matrix result) {
     int threadDep = threadIdx.z;
     int threadRow = threadIdx.y;
     int threadCol = threadIdx.x;
@@ -352,53 +366,59 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result) {
     }
 }
 
-void jacobi_naive(Args args, Matrix A, Matrix B) {
-    Matrix deviceA, deviceB, temp;
+/********************
+ * END CUDA KERNELS *
+ ********************/
+
+Matrix initialize_device(Matrix A) {
+    Matrix deviceA;
 
     deviceA.width = A.width;
     deviceA.height = A.height;
     deviceA.depth = A.depth;
     deviceA.dimensions = A.dimensions;
 
-    deviceB.width = B.width;
-    deviceB.height = B.height;
-    deviceB.depth = B.depth;
-    deviceB.dimensions = B.dimensions;
-
     size_t sizeA = A.width * A.height * A.depth * sizeof(float);
-    size_t sizeB = B.width * B.height * B.depth * sizeof(float);
 
-    cudaMalloc((void **) &deviceA.elements, sizeA);
-    cudaMalloc((void **) &deviceB.elements, sizeB);
+    HANDLE_ERROR(cudaMalloc((void **) &deviceA.elements, sizeA));
+    HANDLE_ERROR(cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice));
 
-    cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice);
-    cudaMemcpy(deviceB.elements, B.elements, sizeB, cudaMemcpyHostToDevice);
+    return deviceA;
+}
+
+void callKernel(Args args, Matrix A, Matrix B) {
+    Matrix deviceA, deviceB;
+    deviceA = initialize_device(A);
+    deviceB = initialize_device(B);
 
     if (args.dimensions == 1) {
         dim3 blocks(max(args.size/32, 1));
         dim3 threads(min(args.size, 32));
 
         for (int t = 0; t < args.iterations; t++) {
-            jacobi1d_naive<<<blocks, threads>>>(deviceA, deviceB);
+            jacobi1d<<<blocks, threads>>>(deviceA, deviceB);
+//            checkCUDAError("jacobi1d", true);
             swap(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
         dim3 blocks(max(args.size/16, 1), max(args.size/16, 1));
         dim3 threads(min(args.size, 16), min(args.size, 16));
         for (int t = 0; t < args.iterations; t++) {
-            jacobi2d_naive<<<blocks, threads>>>(deviceA, deviceB);
+            jacobi2d<<<blocks, threads>>>(deviceA, deviceB);
+//            checkCUDAError("jacobi2d", true);
             swap(deviceA, deviceB);
         }
     } else {
         dim3 blocks(max(args.size/8, 1), max(args.size/8, 1), max(args.size/8, 1));
         dim3 threads(min(args.size, 8), min(args.size, 8), min(args.size, 8));
         for (int t = 0; t < args.iterations; t++) {
-            jacobi3d_naive<<<blocks, threads>>>(deviceA, deviceB);
+            jacobi3d<<<blocks, threads>>>(deviceA, deviceB);
+//            checkCUDAError("jacobi3d", true);
             swap(deviceA, deviceB);
         }
     }
 
-    cudaMemcpy(B.elements, deviceA.elements, sizeA, cudaMemcpyDeviceToHost);
+    cudaMemcpy(B.elements, deviceA.elements, A.width * A.height * A.depth * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
 void print_data(float *data, int size, int dimensions) {
@@ -440,7 +460,6 @@ int main(int argc, char *argv[]) {
 
     atexit(cleanupCuda);
 
-    //if (args.debug) { print_data(data, args.size, args.dimensions); }
-    jacobi_naive(args, A, B);
+    callKernel(args, A, B);
     if (args.debug) { print_data(B.elements, args.size, args.dimensions); }
 }
