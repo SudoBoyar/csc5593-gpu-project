@@ -397,6 +397,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
 
         for (int t = 0; t < args.iterations; t++) {
             jacobi1d<<<blocks, threads>>>(deviceA, deviceB);
+//            checkCUDAError("jacobi1d", true);
             swap(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
@@ -404,6 +405,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
         dim3 threads(min(args.size, 16), min(args.size, 16));
         for (int t = 0; t < args.iterations; t++) {
             jacobi2d<<<blocks, threads>>>(deviceA, deviceB);
+//            checkCUDAError("jacobi2d", true);
             swap(deviceA, deviceB);
         }
     } else {
@@ -411,6 +413,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
         dim3 threads(min(args.size, 8), min(args.size, 8), min(args.size, 8));
         for (int t = 0; t < args.iterations; t++) {
             jacobi3d<<<blocks, threads>>>(deviceA, deviceB);
+//            checkCUDAError("jacobi3d", true);
             swap(deviceA, deviceB);
         }
     }

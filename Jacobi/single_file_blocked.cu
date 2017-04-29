@@ -692,6 +692,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
 
         for (int t = 0; t < args.iterations; t++) {
             jacobi1d<<<blocks, threads>>>(deviceA, deviceB);
+//            checkCUDAError("jacobi1d", true);
             swap(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
@@ -699,7 +700,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
         dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y);
         for (int t = 0; t < args.iterations; t++) {
             jacobi2d<<<blocks, threads>>>(deviceA, deviceB);
-            checkCUDAError("jacobi2d", true);
+//            checkCUDAError("jacobi2d", true);
             swap(deviceA, deviceB);
         }
     } else {
@@ -707,6 +708,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
         dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y, TILE_DEPTH / PER_THREAD_Z);
         for (int t = 0; t < args.iterations; t++) {
             jacobi3d<<<blocks, threads>>>(deviceA, deviceB);
+//            checkCUDAError("jacobi3d", true);
             swap(deviceA, deviceB);
         }
     }
