@@ -348,7 +348,6 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     for (int x = 0; x < PER_THREAD_X; x++) {
         sharedX[x] = threadCol + blockDim.x * x + 1;
         globalX[x] = blockCol * TILE_WIDTH + sharedX[x] - 1;
-//        printf("%d %d %d %d CALCULATING_X_INDEXES X:%d Y:NA SHARED-X:%d GLOBAL-X:%d \n", threadCol, threadRow, blockCol, blockRow, x, sharedX[x], globalX[x]);
     }
 
     // Y shared and global
@@ -356,7 +355,6 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     for (int y = 0; y < PER_THREAD_Y; y++) {
         sharedY[y] = threadRow + blockDim.y * y + 1;
         globalY[y] = blockRow * TILE_HEIGHT + sharedY[y] - 1;
-//        printf("%d %d %d %d CALCULATING_Y_INDEXES X:NA Y:%d SHARED-Y:%d GLOBAL-Y:%d \n", threadCol, threadRow, blockCol, blockRow, y, sharedY[y], globalY[y]);
     }
 
     // Global absolute index
@@ -365,31 +363,9 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
 #pragma unroll
         for (int x = 0; x < PER_THREAD_X; x++) {
             globalIndex[y][x] = globalX[x] + globalY[y] * data.width;
-//            local[y][x] = (float)globalIndex[y][x];
         }
     }
 
-//    if (threadCol == blockDim.x - 1 && threadRow == blockDim.y - 1) {
-//        printf("Block Dims: %d %d\n", blockDim.x, blockDim.y);
-//        printf("Shared:\n");
-//
-//#pragma unroll
-//        for (int y = 0; y < PER_THREAD_Y; y++) {
-//#pragma unroll
-//            for (int x = 0; x < PER_THREAD_X; x++) {
-//                printf("%d %d\n", sharedX[x], sharedY[y]);
-//            }
-//        }
-//
-//        printf("Global:\n");
-//#pragma unroll
-//        for (int y = 0; y < PER_THREAD_Y; y++) {
-//#pragma unroll
-//            for (int x = 0; x < PER_THREAD_X; x++) {
-//                printf("%d %d %d\n", globalX[x], globalY[y], globalIndex[y][x]);
-//            }
-//        }
-//    }
     /*
      * Copy into shared memory
      */
@@ -409,19 +385,19 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
              *
              * Optimizing the width for reads is the responsibility of the calling code.
              */
-//            printf("%d %d %d %d READING_FROM_GLOBAL X:%d Y:%d SHAREDX:%d SHAREDY:%d GLOBAL:%d \n", threadCol, threadRow, blockCol, blockRow, x, y, sharedX[x], sharedY[y], globalIndex[y][x]);
             shared[sharedY[y]][sharedX[x]] = data.elements[globalIndex[y][x]];
         }
     }
 
+    // Copy below-block dependencies into shared memory
     if (threadRow == 0 && blockRow > 0) {
 #pragma unroll
         for (int x = 0; x < PER_THREAD_X; x++) {
-//            printf("%d %d %d %d READING_EDGES_FROM_GLOBAL X:%d Y:NA SHAREDX:%d SHAREDY:NA GLOBAL:%d \n", threadCol, threadRow, blockCol, blockRow, x, sharedX[x], globalIndex[0][x]-data.width);
             shared[0][sharedX[x]] = data.elements[globalIndex[0][x] - data.width];
         }
     }
 
+    // Copy above-block dependencies into shared memory
     if (threadRow == blockDim.y - 1 && (blockRow + 1) * TILE_HEIGHT < data.height - 1) {
 #pragma unroll
         for (int x = 0; x < PER_THREAD_X; x++) {
@@ -429,21 +405,15 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
         }
     }
 
+    // Copy left-of-block dependencies into shared memory
     if (threadCol == 0 && blockCol > 0) {
 #pragma unroll
-//        if (PER_THREAD_Y > 1 && blockDim.x > TILE_HEIGHT && threadRow == 0) {
-//            // >1/thread, and more threads wide than the full tile height, transpose the threads
-//            int tempY = blockRow * TILE_HEIGHT + threadCol * data.width;
-//            if (tempY < (blockRow + 1) * TILE_HEIGHT) {
-//                shared[threadCol][0] = data.elements[tempY - 1];
-//            }
-//        } else {
-            for (int y = 0; y < PER_THREAD_Y; y++) {
-                shared[sharedY[y]][0] = data.elements[globalIndex[y][0] - 1];
-            }
-//        }
+        for (int y = 0; y < PER_THREAD_Y; y++) {
+            shared[sharedY[y]][0] = data.elements[globalIndex[y][0] - 1];
+        }
     }
 
+    // Copy right-of-block dependencies into shared memory
     if (threadCol == blockDim.x - 1 && (blockCol + 1) * TILE_WIDTH < data.width) {
 #pragma unroll
         for (int y = 0; y < PER_THREAD_Y; y++) {
@@ -452,10 +422,6 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     }
 
     __syncthreads();
-
-//    if (threadCol == 0 && threadRow == 0) {
-//        printf("%d %d %.3f %.3f %.3f %.3f\n", blockCol, blockRow, shared[0][1], shared[1][0], shared[0][TILE_WIDTH + 1], shared[TILE_HEIGHT + 1][0]);
-//    }
 
     /*
      * Calculate Values
@@ -479,14 +445,11 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
                         shared[sharY - 1][sharX] +
                         shared[sharY + 1][sharX]
                     ) * 0.2;
-//                printf("Calculated %.3f\n", local[y][x]);
             } else if (globX == 0 || globX == data.width - 1 || globY == 0 || globY == data.height - 1) {
                 // On the edge
                 local[y][x] = shared[sharY][sharX];
             } else {
                 // Beyond the edge
-//                printf("Beyond the edge %d %d %d %d %d %d %d %d\n", threadIdx.x, threadIdx.y, globalX[x], globalY[y], sharedX[x], sharedY[y], x, y);
-                local[y][x] = 999.0;
             }
         }
     }
@@ -497,9 +460,7 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     for (int y = 0; y < PER_THREAD_Y; y++) {
 //#pragma unroll
         for (int x = 0; x < PER_THREAD_X; x++) {
-//            printf("Writing %.3f to %d\n", local[y][x], globalIndex[y][x]);
             result.elements[globalIndex[y][x]] = local[y][x];
-//            result.elements[globalIndex[y][x]] = shared[sharedY[y]][sharedX[x]];
         }
     }
 }
