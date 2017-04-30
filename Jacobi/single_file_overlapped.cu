@@ -58,18 +58,17 @@ void cleanupCuda(void) {
  *********************/
 
 struct Args {
-    bool debug = false;
-    bool sequential = false;
-    bool blocked = false;
-    bool overlapped = false;
+    bool debug;
+    bool sequential;
+    bool blocked;
+    bool overlapped;
     // Data attributes
-    int size = 1024, dimensions = 2, alloc_size;
-    int xSize = 1, ySize = 1, zSize = 1;
-    int xBlockSize = 1, yBlockSize = 1, zBlockSize = 1, tBlockSize;
+    int size, dimensions, alloc_size;
+    int xSize, ySize, zSize;
+    int xBlockSize, yBlockSize, zBlockSize, tBlockSize;
     // Run attributes
-    int grid_size = 1, block_count = -1, thread_count = -1, iterations = 1000;
+    int grid_size, block_count, thread_count, iterations;
 };
-
 
 void usage(char *prog_name, string msg) {
     if (msg.size() > 0) {
@@ -98,6 +97,18 @@ void usage(char *prog_name, string msg) {
 
 Args parse_arguments(int argc, char *argv[]) {
     Args args = Args();
+    args.debug = false;
+    args.sequential = false;
+    args.blocked = false;
+    args.overlapped = false;
+    args.size = 1024;
+    args.dimensions = 2;
+    args.xSize = args.ySize = args.zSize = 1;
+    args.xBlockSize = args.yBlockSize = args.zBlockSize = 1;
+    args.grid_size = 1;
+    args.block_count = -1;
+    args.thread_count = -1;
+    args.iterations = 1000;
 
     int opt;
     // Parse args
@@ -283,6 +294,14 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
 #define BLOCK_DIM_Y TILE_HEIGHT/PER_THREAD_Y
 #define BLOCK_DIM_Z TILE_DEPTH/PER_THREAD_Z
 
+#define PER_THREAD_OVERLAPPED_COUNT_X (TILE_AGE + TILE_WIDTH - 1) / TILE_WIDTH
+#define PER_THREAD_OVERLAPPED_COUNT_Y (TILE_AGE + TILE_HEIGHT - 1) / TILE_HEIGHT
+#define PER_THREAD_OVERLAPPED_COUNT_Z (TILE_AGE + TILE_DEPTH - 1) / TILE_DEPTH
+
+#define PER_THREAD_COMBINED_ITERATIONS_X PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X
+#define PER_THREAD_COMBINED_ITERATIONS_Y PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y + PER_THREAD_OVERLAPPED_COUNT_Y
+#define PER_THREAD_COMBINED_ITERATIONS_Z PER_THREAD_OVERLAPPED_COUNT_Z + PER_THREAD_Z + PER_THREAD_OVERLAPPED_COUNT_Z
+
 #define BlockStartX(x) x * TILE_WIDTH;
 #define BlockStartY(y) y * TILE_HEIGHT;
 #define BlockStartZ(z) z * TILE_DEPTH;
@@ -296,23 +315,45 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
     int threadCol = threadIdx.x;
     int blockCol = blockIdx.x;
 
-    // Max number of things any given thread could be responsible for when working with ONE of the overlapped sections
-    int perThreadOverlappedCount = TILE_AGE / TILE_WIDTH + 1;
-
-    int globalX[PER_THREAD_X + perThreadOverlappedCount + perThreadOverlappedCount];
-    int sharedX[PER_THREAD_X + perThreadOverlappedCount + perThreadOverlappedCount];
+    int globalX[PER_THREAD_COMBINED_ITERATIONS_X];
+    int sharedX[PER_THREAD_COMBINED_ITERATIONS_X];
 
     // Shared and local data arrays
-    __shared__ float shared[TILE_AGE][(TILE_AGE + TILE_WIDTH + TILE_AGE)];
-    float local[PER_THREAD_X + perThreadOverlappedCount + perThreadOverlappedCount];
+    __shared__ float shared[TILE_AGE + 1][(TILE_AGE + TILE_WIDTH + TILE_AGE)];
 
     // Some useful bits of info
     int globalBlockStart = blockCol * TILE_WIDTH;
+    // Use >= comparison
     int globalBlockReadStart = max(0, globalBlockStart - TILE_AGE);
-    int globalBlockReadEnd = min(data.width, globalBlockStart + TILE_WIDTH + TILE_AGE);
+    // Use <= comparison
+    int globalBlockReadEnd = min(data.width - 1, globalBlockStart + TILE_WIDTH + TILE_AGE);
 
-    int isFirstBlock = blockCol == 0;
-    int isLastBlock = (blockCol + 1) * TILE_WIDTH >= data.width;
+    // Indexes in overlapped region left of the block
+#pragma unroll
+    for (int x = 0; x < PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+//        int initialPositionInBlock = PER_THREAD_OVERLAPPED_COUNT_X + threadCol;
+//        int currentLeftShiftIntoOverlap = initialPositionInBlock - BLOCK_DIM_X * x;
+        sharedX[x] = TILE_AGE + threadCol - (PER_THREAD_OVERLAPPED_COUNT_X - x) * BLOCK_DIM_X;
+        globalX[x] = globalBlockStart + sharedX[x] - TILE_AGE;
+    }
+
+#pragma unroll
+    for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
+        // Locations inside the block
+        sharedX[x] = TILE_AGE + threadCol + BLOCK_DIM_X * (x - PER_THREAD_OVERLAPPED_COUNT_X);
+        globalX[x] = globalBlockStart + sharedX[x] - TILE_AGE;
+    }
+
+#pragma unroll
+    for (int x = PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+//        int globalBlockEnd = globalBlockStart + TILE_WIDTH;
+//        int initialPositionOutOfBlock = globalBlockEnd + threadCol;
+//        int currentPositionOutOfBlock = initialPositionOutOfBlock + BLOCK_DIM_X * x;
+        sharedX[x] = TILE_AGE + TILE_WIDTH + threadCol + BLOCK_DIM_X * (x - (PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X));
+        globalX[x] = globalBlockStart + sharedX[x] - TILE_AGE;
+    }
+
+    __syncthreads();
 
     /**
      * Global Memory:
@@ -341,85 +382,85 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
      * TILE_AGE + TILE_SIZE + TILE_AGE
      */
 
-    // Read the block data itself into shared memory
+    // Read the block data itself into shared memory, this will always coalesce nicely
 #pragma unroll
-    for (int x = 0; x < PER_THREAD_X; x++) {
-        // Offset shared index by TILE_AGE to allow for the overlapped data
-        int sharedX = threadCol + BLOCK_DIM_X * x + TILE_AGE;
-        // Remove TILE_AGE offset
-        int globalX = globalBlockStart + sharedX - TILE_AGE;
-
-        shared[0][sharedX] = data.elements[globalX];
+    for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
+        shared[0][sharedX[x]] = data.elements[globalX[x]];
     }
 
-    // Read the adjacent/overlapped data sections into shared memory
+    // Read the left overlapped data into shared memory
 #pragma unroll
-    for (int x = 0; x < TILE_AGE; x += BLOCK_DIM_X) {
+    for (int x = 0; x < PER_THREAD_OVERLAPPED_COUNT_X; x++) {
         // Left hand side data
-        int sharedX = x + threadCol;
-        int globalX = globalBlockStart - TILE_AGE + sharedX;
-        if (globalX >= 0 && globalX < globalBlockStart) {
-            shared[0][sharedX] = data.elements[globalX];
-        }
-
-        sharedX = TILE_AGE + TILE_WIDTH + threadCol + x;
-        globalX = globalBlockStart + TILE_WIDTH + sharedX - TILE_AGE;
-        if (globalX < data.width) {
-            shared[0][sharedX] = data.elements[globalX];
+        int globX = globalX[x];
+        if (globX >= globalBlockReadStart && globX <= globalBlockReadEnd) {
+            shared[0][sharedX[x]] = data.elements[globX];
         }
     }
 
-    __syncthreads();
+    // Read the right overlapped data into shared memory
+#pragma unroll
+    for (int x = PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+        // Left hand side data
+        int globX = globalX[x];
+        if (globX >= globalBlockReadStart && globX <= globalBlockReadEnd) {
+            shared[0][sharedX[x]] = data.elements[globX];
+        }
+    }
 
     /*
      * Calculate Values
      */
 #pragma unroll
     for (int t = 1; t <= TILE_AGE; t++) {
-        // First let's do the block itself, since that's nice and easy
-#pragma unroll
-        for (int x = 0; x < PER_THREAD_X; x++) {
-            int globX = globalX[x + perThreadOverlappedCount];
-            int sharX = sharedX[x + perThreadOverlappedCount];
+        __syncthreads();
 
-            if (globX > 0 && globX < data.width - 1) {
-                // Calculate new value
-                shared[t][x] =
-                    (
-                        shared[t-1][sharX] +
-                        shared[t-1][sharX - 1] +
-                        shared[t-1][sharX + 1]
-                    ) / 3;
-            } else if (globX == 0 || globX == data.width - 1) {
-                // On the edge
-                shared[t][x] = shared[t-1][sharX];
+        int iterationCalculateStart = max(globalBlockStart - TILE_AGE + t - 1, 0);
+        int iterationCalculateEnd = min(globalBlockStart + TILE_WIDTH + TILE_AGE - t, data.width - 1);
+//        printf("Calc start/end %d %d %d %d %d\n", blockCol, threadCol, t, iterationCalculateStart, iterationCalculateEnd);
+
+        // First let's do the block itself, since that always plays nicely
+#pragma unroll
+        for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
+            int globX = globalX[x];
+            int sharX = sharedX[x];
+
+            if (globX > iterationCalculateStart && globX < iterationCalculateEnd) {
+//                printf("%d %d %d %d %d %d Main Block Calculate\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
+                shared[t][sharX] = (shared[t-1][sharX] + shared[t-1][sharX - 1] + shared[t-1][sharX + 1]) / 3;
+//                printf("%d %d %d %d %d %.3f", blockCol, threadCol, t, x, globalX[x])
             } else {
-                // Beyond the edge, shouldn't ever hit this unless we messed something up
+//                printf("%d %d %d %d %d %d Main Block Copy\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
+                shared[t][sharX] = shared[t-1][sharX];
             }
         }
 
         // Now the left overlapped regions
 #pragma unroll
-        for (int x = 0; x < perThreadOverlappedCount; x++) {
+        for (int x = 0; x < PER_THREAD_OVERLAPPED_COUNT_X; x++) {
             int globX = globalX[x];
             int sharX = sharedX[x];
 
-            if (globX > 0 && globX < data.width - 1) {
+            if (globX > iterationCalculateStart && globX < iterationCalculateEnd) {
+//                printf("%d %d %d %d %d %d Left Overlap Calculate\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
                 shared[t][sharX] = (shared[t-1][sharX - 1] + shared[t-1][sharX] + shared[t-1][sharX + 1]) / 3;
             } else {
+//                printf("%d %d %d %d %d %d Left Overlap Copy\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
                 shared[t][sharX] = shared[t-1][sharX];
             }
         }
 
         // And the right overlapped regions
 #pragma unroll
-        for (int x = 0; x < perThreadOverlappedCount; x++) {
-            int globX = globalX[PER_THREAD_X + perThreadOverlappedCount + x];
-            int sharX = sharedX[PER_THREAD_X + perThreadOverlappedCount + x];
+        for (int x = PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+            int globX = globalX[x];
+            int sharX = sharedX[x];
 
-            if (globX > 0) {
+            if (globX > iterationCalculateStart && globX < iterationCalculateEnd) {
+//                printf("%d %d %d %d %d %d Right Overlap Calculate\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
                 shared[t][sharX] = (shared[t-1][sharX - 1] + shared[t-1][sharX] + shared[t-1][sharX + 1]) / 3;
             } else {
+//                printf("%d %d %d %d %d %d Right Overlap Copy\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
                 shared[t][sharX] = shared[t-1][sharX];
             }
         }
@@ -428,15 +469,8 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
     __syncthreads();
 
 #pragma unroll
-    for (int x = 0; x < PER_THREAD_X; x++) {
-        int globX = globalX[x + perThreadOverlappedCount];
-        int sharX = sharedX[x + perThreadOverlappedCount];
-
-        result.elements[globX] = shared[TILE_AGE][sharX];
-    }
-
-    for (int x = 0; x < PER_THREAD_X; x++) {
-        result.elements[globalIndex[x]] = shared[x];
+    for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
+        result.elements[globalX[x]] = shared[TILE_AGE][sharedX[x]];
     }
 }
 
@@ -805,12 +839,12 @@ void callKernel(Args args, Matrix A, Matrix B) {
     deviceB = initialize_device(B, false);
 
     if (args.dimensions == 1) {
-        dim3 blocks(max(args.size / (args.xBlockSize / PER_THREAD_X) , 1));
-        dim3 threads(args.xBlockSize);
+        dim3 blocks(args.size / TILE_WIDTH, 1);
+        dim3 threads(TILE_WIDTH / PER_THREAD_X);
 
         for (int t = 0; t < args.iterations; t++) {
             jacobi1d<<<blocks, threads>>>(deviceA, deviceB);
-//            checkCUDAError("jacobi1d", true);
+            checkCUDAError("jacobi1d", true);
             swap(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
