@@ -275,50 +275,168 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
 #define TILE_WIDTH 4
 #define TILE_HEIGHT 2
 #define TILE_DEPTH 2
+#define TILE_AGE 2
 #define PER_THREAD_X 2
 #define PER_THREAD_Y 2
 #define PER_THREAD_Z 2
+#define BLOCK_DIM_X TILE_WIDTH/PER_THREAD_X
+#define BLOCK_DIM_Y TILE_HEIGHT/PER_THREAD_Y
+#define BLOCK_DIM_Z TILE_DEPTH/PER_THREAD_Z
+
+#define BlockStartX(x) x * TILE_WIDTH;
+#define BlockStartY(y) y * TILE_HEIGHT;
+#define BlockStartZ(z) z * TILE_DEPTH;
+
+#define BlockReadStartX(x) BlockStartX(x) - TILE_AGE;
+#define BlockReadEndX(x) BlockStartX(x) + TILE_WIDTH + TILE_AGE;
+#define BlockReadStartY(y) BlockStartY(y) - TILE_AGE;
+#define BlockReadEndY(y) BlockStartY(y) + TILE_WIDTH + TILE_AGE;
 
 __global__ void jacobi1d(Matrix data, Matrix result) {
     int threadCol = threadIdx.x;
     int blockCol = blockIdx.x;
 
-    // Where the block starts in global data
-    int blockStart = blockCol * TILE_WIDTH;
-    //// Where the thread starts in the shared block
-    //int threadStart = threadCol * PER_THREAD;
+    // Max number of things any given thread could be responsible for when working with ONE of the overlapped sections
+    int perThreadOverlappedCount = TILE_AGE / TILE_WIDTH + 1;
 
-    __shared__ float shared[TILE_WIDTH];
-    float local[PER_THREAD_X];
+    int globalX[PER_THREAD_X + perThreadOverlappedCount + perThreadOverlappedCount];
+    int sharedX[PER_THREAD_X + perThreadOverlappedCount + perThreadOverlappedCount];
 
+    // Shared and local data arrays
+    __shared__ float shared[TILE_AGE][(TILE_AGE + TILE_WIDTH + TILE_AGE)];
+    float local[PER_THREAD_X + perThreadOverlappedCount + perThreadOverlappedCount];
+
+    // Some useful bits of info
+    int globalBlockStart = blockCol * TILE_WIDTH;
+    int globalBlockReadStart = max(0, globalBlockStart - TILE_AGE);
+    int globalBlockReadEnd = min(data.width, globalBlockStart + TILE_WIDTH + TILE_AGE);
+
+    int isFirstBlock = blockCol == 0;
+    int isLastBlock = (blockCol + 1) * TILE_WIDTH >= data.width;
+
+    /**
+     * Global Memory:
+     *
+     *   Block 0   Block 1   Block 2   Block 3   Block 4
+     * | _ _ _ _ | _ _ _ _ | _ _ _ _ | _ _ _ _ | _ _ _ _ |
+     *
+     * If we're block 2, we need:
+     *
+     *   Block 0   Block 1   Block 2   Block 3   Block 4
+     * | _ _ _ _ | _ _ _ _ | _ _ _ _ | _ _ _ _ | _ _ _ _ |
+     *                     |  this   |
+     *
+     * And for a tile age of AGE we also need:
+     *
+     *   Block 0   Block 1   Block 2   Block 3   Block 4
+     * | _ _ _ _ | _ _ _ _ | _ _ _ _ | _ _ _ _ | _ _ _ _ |
+     *              | this |         | this |
+     *
+     * So what we end up with is
+     *
+     *   Block 0   Block 1   Block 2   Block 3   Block 4
+     * | _ _ _ _ | _ _ _ _ | _ _ _ _ | _ _ _ _ | _ _ _ _ |
+     *              | AGE  |  TLSIZE | AGE  |
+     *
+     * TILE_AGE + TILE_SIZE + TILE_AGE
+     */
+
+    // Read the block data itself into shared memory
 #pragma unroll
-    for (int i = 0; i < PER_THREAD_X; i++) {
-        // Issue contiguous reads, e.g. for 4 threads, 2 per thread: do 11|11|22|22 instead of 12|12|12|12
-        // => shared[ [0-3] + 4 * [0-1] ]= elements[ [0-3] + 4 * [0-1] + blockStart ]
-        shared[threadCol + blockDim.x * i] = data.elements[threadCol + blockDim.x * i + blockStart];
+    for (int x = 0; x < PER_THREAD_X; x++) {
+        // Offset shared index by TILE_AGE to allow for the overlapped data
+        int sharedX = threadCol + BLOCK_DIM_X * x + TILE_AGE;
+        // Remove TILE_AGE offset
+        int globalX = globalBlockStart + sharedX - TILE_AGE;
+
+        shared[0][sharedX] = data.elements[globalX];
     }
 
+    // Read the adjacent/overlapped data sections into shared memory
 #pragma unroll
-    for (int i = 0; i < PER_THREAD_X; i++) {
-        int x = threadCol + i * blockDim.x;
-        int globalX = x + blockStart;
-        if (globalX > 0 && globalX < data.width - 1) {
-            local[i] = (shared[x] + shared[x - 1] + shared[x + 1]) / 3;
-        } else if (globalX == 0 || globalX == data.width - 1) {
-            local[i] = shared[x];
-        } else {
-            // Outside of the bounds
+    for (int x = 0; x < TILE_AGE; x += BLOCK_DIM_X) {
+        // Left hand side data
+        int sharedX = x + threadCol;
+        int globalX = globalBlockStart - TILE_AGE + sharedX;
+        if (globalX >= 0 && globalX < globalBlockStart) {
+            shared[0][sharedX] = data.elements[globalX];
+        }
+
+        sharedX = TILE_AGE + TILE_WIDTH + threadCol + x;
+        globalX = globalBlockStart + TILE_WIDTH + sharedX - TILE_AGE;
+        if (globalX < data.width) {
+            shared[0][sharedX] = data.elements[globalX];
+        }
+    }
+
+    __syncthreads();
+
+    /*
+     * Calculate Values
+     */
+#pragma unroll
+    for (int t = 1; t <= TILE_AGE; t++) {
+        // First let's do the block itself, since that's nice and easy
+#pragma unroll
+        for (int x = 0; x < PER_THREAD_X; x++) {
+            int globX = globalX[x + perThreadOverlappedCount];
+            int sharX = sharedX[x + perThreadOverlappedCount];
+
+            if (globX > 0 && globX < data.width - 1) {
+                // Calculate new value
+                shared[t][x] =
+                    (
+                        shared[t-1][sharX] +
+                        shared[t-1][sharX - 1] +
+                        shared[t-1][sharX + 1]
+                    ) / 3;
+            } else if (globX == 0 || globX == data.width - 1) {
+                // On the edge
+                shared[t][x] = shared[t-1][sharX];
+            } else {
+                // Beyond the edge, shouldn't ever hit this unless we messed something up
+            }
+        }
+
+        // Now the left overlapped regions
+#pragma unroll
+        for (int x = 0; x < perThreadOverlappedCount; x++) {
+            int globX = globalX[x];
+            int sharX = sharedX[x];
+
+            if (globX > 0 && globX < data.width - 1) {
+                shared[t][sharX] = (shared[t-1][sharX - 1] + shared[t-1][sharX] + shared[t-1][sharX + 1]) / 3;
+            } else {
+                shared[t][sharX] = shared[t-1][sharX];
+            }
+        }
+
+        // And the right overlapped regions
+#pragma unroll
+        for (int x = 0; x < perThreadOverlappedCount; x++) {
+            int globX = globalX[PER_THREAD_X + perThreadOverlappedCount + x];
+            int sharX = sharedX[PER_THREAD_X + perThreadOverlappedCount + x];
+
+            if (globX > 0) {
+                shared[t][sharX] = (shared[t-1][sharX - 1] + shared[t-1][sharX] + shared[t-1][sharX + 1]) / 3;
+            } else {
+                shared[t][sharX] = shared[t-1][sharX];
+            }
         }
     }
 
     __syncthreads();
 
 #pragma unroll
-    for (int i = 0; i < PER_THREAD_X; i++) {
-        int x = threadCol + blockDim.x * i + blockStart;
-        if (x < data.width) {
-            result.elements[x] = local[i];
-        }
+    for (int x = 0; x < PER_THREAD_X; x++) {
+        int globX = globalX[x + perThreadOverlappedCount];
+        int sharX = sharedX[x + perThreadOverlappedCount];
+
+        result.elements[globX] = shared[TILE_AGE][sharX];
+    }
+
+    for (int x = 0; x < PER_THREAD_X; x++) {
+        result.elements[globalIndex[x]] = shared[x];
     }
 }
 
