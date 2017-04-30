@@ -331,8 +331,6 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
     // Indexes in overlapped region left of the block
 #pragma unroll
     for (int x = 0; x < PER_THREAD_OVERLAPPED_COUNT_X; x++) {
-//        int initialPositionInBlock = PER_THREAD_OVERLAPPED_COUNT_X + threadCol;
-//        int currentLeftShiftIntoOverlap = initialPositionInBlock - BLOCK_DIM_X * x;
         sharedX[x] = TILE_AGE + threadCol - (PER_THREAD_OVERLAPPED_COUNT_X - x) * BLOCK_DIM_X;
         globalX[x] = globalBlockStart + sharedX[x] - TILE_AGE;
     }
@@ -346,9 +344,6 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
 
 #pragma unroll
     for (int x = PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X; x++) {
-//        int globalBlockEnd = globalBlockStart + TILE_WIDTH;
-//        int initialPositionOutOfBlock = globalBlockEnd + threadCol;
-//        int currentPositionOutOfBlock = initialPositionOutOfBlock + BLOCK_DIM_X * x;
         sharedX[x] = TILE_AGE + TILE_WIDTH + threadCol + BLOCK_DIM_X * (x - (PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X));
         globalX[x] = globalBlockStart + sharedX[x] - TILE_AGE;
     }
@@ -417,7 +412,6 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
 
         int iterationCalculateStart = max(globalBlockStart - TILE_AGE + t - 1, 0);
         int iterationCalculateEnd = min(globalBlockStart + TILE_WIDTH + TILE_AGE - t, data.width - 1);
-//        printf("Calc start/end %d %d %d %d %d\n", blockCol, threadCol, t, iterationCalculateStart, iterationCalculateEnd);
 
         // First let's do the block itself, since that always plays nicely
 #pragma unroll
@@ -426,11 +420,8 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
             int sharX = sharedX[x];
 
             if (globX > iterationCalculateStart && globX < iterationCalculateEnd) {
-//                printf("%d %d %d %d %d %d Main Block Calculate\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
                 shared[t][sharX] = (shared[t-1][sharX] + shared[t-1][sharX - 1] + shared[t-1][sharX + 1]) / 3;
-//                printf("%d %d %d %d %d %.3f", blockCol, threadCol, t, x, globalX[x])
             } else {
-//                printf("%d %d %d %d %d %d Main Block Copy\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
                 shared[t][sharX] = shared[t-1][sharX];
             }
         }
@@ -442,10 +433,8 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
             int sharX = sharedX[x];
 
             if (globX > iterationCalculateStart && globX < iterationCalculateEnd) {
-//                printf("%d %d %d %d %d %d Left Overlap Calculate\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
                 shared[t][sharX] = (shared[t-1][sharX - 1] + shared[t-1][sharX] + shared[t-1][sharX + 1]) / 3;
             } else {
-//                printf("%d %d %d %d %d %d Left Overlap Copy\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
                 shared[t][sharX] = shared[t-1][sharX];
             }
         }
@@ -457,10 +446,8 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
             int sharX = sharedX[x];
 
             if (globX > iterationCalculateStart && globX < iterationCalculateEnd) {
-//                printf("%d %d %d %d %d %d Right Overlap Calculate\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
                 shared[t][sharX] = (shared[t-1][sharX - 1] + shared[t-1][sharX] + shared[t-1][sharX + 1]) / 3;
             } else {
-//                printf("%d %d %d %d %d %d Right Overlap Copy\n", blockCol, threadCol, t, x, sharedX[x], globalX[x]);
                 shared[t][sharX] = shared[t-1][sharX];
             }
         }
@@ -839,12 +826,12 @@ void callKernel(Args args, Matrix A, Matrix B) {
     deviceB = initialize_device(B, false);
 
     if (args.dimensions == 1) {
-        dim3 blocks(args.size / TILE_WIDTH, 1);
+        dim3 blocks(max(args.size / TILE_WIDTH, 1));
         dim3 threads(TILE_WIDTH / PER_THREAD_X);
 
-        for (int t = 0; t < args.iterations; t++) {
+        for (int t = 0; t < args.iterations / TILE_AGE; t++) {
             jacobi1d<<<blocks, threads>>>(deviceA, deviceB);
-            checkCUDAError("jacobi1d", true);
+//            checkCUDAError("jacobi1d", true);
             swap(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
