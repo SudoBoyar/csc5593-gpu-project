@@ -277,7 +277,7 @@ heraclesMakefileCaseTemplate = """
 """
 
 if __name__ == '__main__':
-    if count(sys.argv >= 1):
+    if len(sys.argv >= 1):
         platform = sys.argv[1]
     else:
         platform = 'heracles'
