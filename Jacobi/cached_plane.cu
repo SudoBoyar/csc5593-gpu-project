@@ -2,12 +2,14 @@
 #include <stdio.h>
 #include <iostream>
 #include <unistd.h>
+#include <sys/time.h>
+#include <sys/time.h>
 
 // Shorthand for formatting usage options
 #define fpe(msg) fprintf(stderr, "\t%s\n", msg);
 
 #define HANDLE_ERROR(err)  ( HandleError( err, __FILE__, __LINE__ ) )
-#define MAX_THREADS (33 * 1024)
+#define MAX_THREADS (65536 * 1024)
 
 using namespace std;
 
@@ -56,7 +58,7 @@ struct Args {
     bool blocked = false;
     bool overlapped = false;
     // Data attributes
-    int size = 1024, dimensions = 2, alloc_size;
+    int size = 1024, dimensions = 2, alloc_size, thread_dim = 8;
     int xSize = 1, ySize = 1, zSize = 1;
     int xBlockSize = 1, yBlockSize = 1, zBlockSize = 1, tBlockSize;
     // Run attributes
@@ -94,7 +96,7 @@ Args parse_arguments(int argc, char *argv[]) {
 
     int opt;
     // Parse args
-    while ((opt = getopt(argc, argv, "n:d:g:b:t:i:x:y:z:T:hSBOD")) != -1) {
+    while ((opt = getopt(argc, argv, "n:d:g:j:b:t:i:x:y:z:T:hSBOD")) != -1) {
         switch (opt) {
             case 'D':
                 args.debug = true;
@@ -113,9 +115,12 @@ Args parse_arguments(int argc, char *argv[]) {
                 break;
             case 'd':
                 args.dimensions = atoi(optarg);
-                break;
+               break;
             case 'g':
                 args.grid_size = atoi(optarg);
+                break;
+            case 'j':
+                args.thread_dim = atoi(optarg);
                 break;
             case 'b':
                 args.block_count = atoi(optarg);
@@ -270,17 +275,17 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result, int z_size) {
 
     int x = blockCol * blockDim.x + threadCol;
     int y = blockRow * blockDim.y + threadRow;
-    int z = blockDep * blockDim.z + threadDep;
+	int z = blockDep * blockDim.z + threadDep;
 
     int xySurface = data.width * data.height;
     int yTemp = y * data.width;
 
 	int zTemp, index, xPrev, xNext, yPrev, yNext, zPrev, zNext; 
 
-    float newValue;
+	float newValue;
     
 //	printf("z=%d, x+y+z = %d\n",x,y,z,x+y+z);
-    while((x+y+z) < MAX_THREADS && z < z_size){
+    while(z < z_size){
 		zTemp = z * xySurface;
 		index = x + yTemp + zTemp; // x + y * data.width + z * data.width * data.height;
 		xPrev = (x - 1) + yTemp + zTemp; // (x-1) + y * data.width + z * data.width * data.height;
@@ -315,7 +320,6 @@ __global__ void jacobi3d_naive(Matrix data, Matrix result, int z_size) {
 
 void jacobi_naive(Args args, Matrix A, Matrix B) {
     Matrix deviceA, deviceB;
-
     deviceA.width = A.width;
     deviceA.height = A.height;
     deviceA.depth = A.depth;
@@ -325,7 +329,9 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
     deviceB.height = B.height;
     deviceB.depth = B.depth;
     deviceB.dimensions = B.dimensions;
-
+    
+    int threadxy_dim = args.thread_count;
+	int blockxy_dim = args.size/threadxy_dim;
     size_t sizeA = A.width * A.height * A.depth * sizeof(float);
     size_t sizeB = B.width * B.height * B.depth * sizeof(float);
 
@@ -335,21 +341,22 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
     cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice);
     cudaMemcpy(deviceB.elements, B.elements, sizeB, cudaMemcpyHostToDevice);
 
-    int  z_size = max(args.size/8, 8);
-
-    dim3 blocks(max(args.size/8, 1), max(args.size/8, 1));
-    dim3 threads( min(args.size, 8), min(args.size, 8), 1);
-    for (int t = 0; t < args.iterations; t++) {
-	   printf("deviceA.width = %d, deviceA.height = %d\n",deviceA.width,deviceA.height);
+    int  z_size = args.size;
+    dim3 blocks(blockxy_dim, blockxy_dim, 1);
+    dim3 threads( threadxy_dim, threadxy_dim, 1);   
+	for (int t = 0; t < args.iterations; t++) {
+//	   printf("deviceA.width = %d, deviceA.height = %d\n",deviceA.width,deviceA.height);
 	   jacobi3d_naive<<<blocks, threads>>>(deviceA, deviceB, z_size);
 	   swap(deviceA, deviceB);
     }
 
     cudaMemcpy(B.elements, deviceA.elements, sizeA, cudaMemcpyDeviceToHost);
+//	free(deviceA.elements);
+//	free(deviceB.elements);
 }
 
 void print_data(float *data, int size, int dimensions) {
-    if (size > 13) {
+    if (size > 17) {
         cerr << "Data too big to print\n" << endl;
         return;
     }
@@ -381,13 +388,22 @@ void print_data(float *data, int size, int dimensions) {
 
 int main(int argc, char *argv[]) {
     Args args = parse_arguments(argc, argv);
+    float runtime;
+    struct timeval start, end;
     Matrix A, B;
+	printf("before initialize\n");
     A = initialize_matrix(args.dimensions, args.size, args.size, args.size);
     B = initialize_matrix(args.dimensions, args.size, args.size, args.size);
 
-    atexit(cleanupCuda);
+//    atexit(cleanupCuda);
 
     //if (args.debug) { print_data(data, args.size, args.dimensions); }
+    gettimeofday( &start, NULL ); 
+	printf("before jacobi_naive/n");
     jacobi_naive(args, A, B);
-    if (args.debug) { print_data(B.elements, args.size, args.dimensions); }
+    gettimeofday( &end, NULL ); 
+    runtime = ( ( end.tv_sec  - start.tv_sec ) * 1000.0 ) + ( ( end.tv_usec - start.tv_usec ) / 1000.0 );
+    printf( "Processing Time: %4.4f milliseconds\n", runtime );
+	if (args.debug) { print_data(B.elements, args.size, args.dimensions); }
+	
 }
