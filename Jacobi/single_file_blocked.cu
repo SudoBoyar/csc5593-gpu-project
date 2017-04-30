@@ -58,16 +58,16 @@ void cleanupCuda(void) {
  *********************/
 
 struct Args {
-    bool debug = false;
-    bool sequential = false;
-    bool blocked = false;
-    bool overlapped = false;
+    bool debug;
+    bool sequential;
+    bool blocked;
+    bool overlapped;
     // Data attributes
-    int size = 1024, dimensions = 2, alloc_size;
-    int xSize = 1, ySize = 1, zSize = 1;
-    int xBlockSize = 1, yBlockSize = 1, zBlockSize = 1, tBlockSize;
+    int size, dimensions, alloc_size;
+    int xSize, ySize, zSize;
+    int xBlockSize, yBlockSize, zBlockSize, tBlockSize;
     // Run attributes
-    int grid_size = 1, block_count = -1, thread_count = -1, iterations = 1000;
+    int grid_size, block_count, thread_count, iterations;
 };
 
 
@@ -98,6 +98,18 @@ void usage(char *prog_name, string msg) {
 
 Args parse_arguments(int argc, char *argv[]) {
     Args args = Args();
+    args.debug = false;
+    args.sequential = false;
+    args.blocked = false;
+    args.overlapped = false;
+    args.size = 1024;
+    args.dimensions = 2;
+    args.xSize = args.ySize = args.zSize = 1;
+    args.xBlockSize = args.yBlockSize = args.zBlockSize = 1;
+    args.grid_size = 1;
+    args.block_count = -1;
+    args.thread_count = -1;
+    args.iterations = 1000;
 
     int opt;
     // Parse args
@@ -288,15 +300,26 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
     //// Where the thread starts in the shared block
     //int threadStart = threadCol * PER_THREAD;
 
-    __shared__ float shared[TILE_WIDTH];
+    __shared__ float shared[TILE_WIDTH + 2];
     float local[PER_THREAD_X];
 
+    // Read block data
 #pragma unroll
     for (int i = 0; i < PER_THREAD_X; i++) {
         // Issue contiguous reads, e.g. for 4 threads, 2 per thread: do 11|11|22|22 instead of 12|12|12|12
         // => shared[ [0-3] + 4 * [0-1] ]= elements[ [0-3] + 4 * [0-1] + blockStart ]
-        shared[threadCol + blockDim.x * i] = data.elements[threadCol + blockDim.x * i + blockStart];
+        shared[1 + threadCol + blockDim.x * i] = data.elements[blockStart + threadCol + blockDim.x * i];
     }
+
+    // Read left and right dependencies
+    if (threadCol == 0 && blockStart > 0) {
+        shared[0] = data.elements[blockStart - 1];
+    }
+    if (threadCol == blockDim.x - 1 && blockStart + TILE_WIDTH < data.width) {
+        shared[TILE_WIDTH + 1] = data.elements[blockStart + TILE_WIDTH];
+    }
+
+    __syncthreads();
 
 #pragma unroll
     for (int i = 0; i < PER_THREAD_X; i++) {
@@ -311,7 +334,7 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
         }
     }
 
-    __syncthreads();
+//    __syncthreads();
 
 #pragma unroll
     for (int i = 0; i < PER_THREAD_X; i++) {
@@ -687,12 +710,12 @@ void callKernel(Args args, Matrix A, Matrix B) {
     deviceB = initialize_device(B, false);
 
     if (args.dimensions == 1) {
-        dim3 blocks(max(args.size / (args.xBlockSize / PER_THREAD_X) , 1));
-        dim3 threads(args.xBlockSize);
+        dim3 blocks(args.size / TILE_WIDTH, 1, 1);
+        dim3 threads(TILE_WIDTH / PER_THREAD_X, 1, 1);
 
         for (int t = 0; t < args.iterations; t++) {
             jacobi1d<<<blocks, threads>>>(deviceA, deviceB);
-//            checkCUDAError("jacobi1d", true);
+            checkCUDAError("jacobi1d", true);
             swap(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
@@ -713,6 +736,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
         }
     }
 
+    printf("%d %d %d %d %d %d\n", A.width, A.height, A.depth, B.width, B.height, B.depth);
     HANDLE_ERROR(cudaMemcpy(B.elements, deviceA.elements, A.width * A.height * A.depth * sizeof(float), cudaMemcpyDeviceToHost));
 }
 
