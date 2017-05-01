@@ -939,8 +939,10 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
         for (int y = 0; y < PER_THREAD_COMBINED_ITERATIONS_Y; y++) {
 #pragma unroll
             for (int x = 0; x < PER_THREAD_COMBINED_ITERATIONS_X; x++) {
-                if (globalX[x] >= 0 && globalX[x] < data.width && globalY[y] >= 0 && globalY[y] < data.height && globalZ[z] >= 0 && globalZ[z] < data.depth) {
-                    shared[sharedZ[z]][sharedY[y]][sharedX[x]] = data.elements[globalIndex[z][y][x]];
+                if (globalX[x] >= 0 && globalX[x] < data.width &&
+                    globalY[y] >= 0 && globalY[y] < data.height &&
+                    globalZ[z] >= 0 && globalZ[z] < data.depth) {
+                    shared[0][sharedZ[z]][sharedY[y]][sharedX[x]] = data.elements[globalIndex[z][y][x]];
                 }
             }
         }
