@@ -294,22 +294,14 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
 #define BLOCK_DIM_Y TILE_HEIGHT/PER_THREAD_Y
 #define BLOCK_DIM_Z TILE_DEPTH/PER_THREAD_Z
 
-#define PER_THREAD_OVERLAPPED_COUNT_X (TILE_AGE + TILE_WIDTH - 1) / TILE_WIDTH
-#define PER_THREAD_OVERLAPPED_COUNT_Y (TILE_AGE + TILE_HEIGHT - 1) / TILE_HEIGHT
-#define PER_THREAD_OVERLAPPED_COUNT_Z (TILE_AGE + TILE_DEPTH - 1) / TILE_DEPTH
+// ceil integer division, have to use the BLOCK_DIM_ definitions rather than the defines themselves or it won't work
+#define PER_THREAD_OVERLAPPED_COUNT_X (TILE_AGE + TILE_WIDTH/PER_THREAD_X - 1) / (TILE_WIDTH/PER_THREAD_X)
+#define PER_THREAD_OVERLAPPED_COUNT_Y (TILE_AGE + TILE_HEIGHT/PER_THREAD_Y - 1) / (TILE_HEIGHT/PER_THREAD_Y)
+#define PER_THREAD_OVERLAPPED_COUNT_Z (TILE_AGE + TILE_DEPTH/PER_THREAD_Z - 1) / (TILE_DEPTH/PER_THREAD_Z)
 
-#define PER_THREAD_COMBINED_ITERATIONS_X PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X
-#define PER_THREAD_COMBINED_ITERATIONS_Y PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y + PER_THREAD_OVERLAPPED_COUNT_Y
-#define PER_THREAD_COMBINED_ITERATIONS_Z PER_THREAD_OVERLAPPED_COUNT_Z + PER_THREAD_Z + PER_THREAD_OVERLAPPED_COUNT_Z
-
-#define BlockStartX(x) x * TILE_WIDTH;
-#define BlockStartY(y) y * TILE_HEIGHT;
-#define BlockStartZ(z) z * TILE_DEPTH;
-
-#define BlockReadStartX(x) BlockStartX(x) - TILE_AGE;
-#define BlockReadEndX(x) BlockStartX(x) + TILE_WIDTH + TILE_AGE;
-#define BlockReadStartY(y) BlockStartY(y) - TILE_AGE;
-#define BlockReadEndY(y) BlockStartY(y) + TILE_WIDTH + TILE_AGE;
+#define PER_THREAD_COMBINED_ITERATIONS_X (PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X)
+#define PER_THREAD_COMBINED_ITERATIONS_Y (PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y + PER_THREAD_OVERLAPPED_COUNT_Y)
+#define PER_THREAD_COMBINED_ITERATIONS_Z (PER_THREAD_OVERLAPPED_COUNT_Z + PER_THREAD_Z + PER_THREAD_OVERLAPPED_COUNT_Z)
 
 __global__ void jacobi1d(Matrix data, Matrix result) {
     int threadCol = threadIdx.x;
@@ -468,39 +460,83 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     int blockCol = blockIdx.x;
 
     // Indexes so we don't have to recompute them.
-    int globalIndex[PER_THREAD_Y][PER_THREAD_X];
-    int globalX[PER_THREAD_X];
-    int globalY[PER_THREAD_Y];
-    int sharedX[PER_THREAD_X];
-    int sharedY[PER_THREAD_Y];
+    int globalIndex[PER_THREAD_COMBINED_ITERATIONS_Y][PER_THREAD_COMBINED_ITERATIONS_X];
+    int globalX[PER_THREAD_COMBINED_ITERATIONS_X];
+    int globalY[PER_THREAD_COMBINED_ITERATIONS_Y];
+    int sharedX[PER_THREAD_COMBINED_ITERATIONS_X];
+    int sharedY[PER_THREAD_COMBINED_ITERATIONS_Y];
 
     // Shared and local data arrays
-    __shared__ float shared[TILE_HEIGHT + 2][TILE_WIDTH + 2];
-    float local[PER_THREAD_Y][PER_THREAD_X];
+    __shared__ float shared[TILE_AGE + 1][TILE_AGE + TILE_HEIGHT + TILE_AGE][TILE_AGE + TILE_WIDTH + TILE_AGE];
+
+    // Some useful bits of info
+    int globalBlockStartX = blockCol * TILE_WIDTH;
+    int globalBlockStartY = blockRow * TILE_HEIGHT;
+    // Use >= comparison
+    int globalBlockReadStartX = max(0, globalBlockStartX - TILE_AGE);
+    int globalBlockReadStartY = max(0, globalBlockStartY - TILE_AGE);
+    // Use <= comparison
+    int globalBlockReadEndX = min(data.width - 1, globalBlockStartX + TILE_WIDTH + TILE_AGE);
+    int globalBlockReadEndY = min(data.height - 1, globalBlockStartY + TILE_HEIGHT + TILE_AGE);
 
     /*
      * Calculate indexes into the global and shared arrays
      */
 
-    // X shared and global
+    // X Indexes
+
+    // Overlapped region to the left of the block
 #pragma unroll
-    for (int x = 0; x < PER_THREAD_X; x++) {
-        sharedX[x] = threadCol + blockDim.x * x + 1;
-        globalX[x] = blockCol * TILE_WIDTH + sharedX[x] - 1;
+    for (int x = 0; x < PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+        // Offset by TILE_AGE to make sure it's within the range since we're going back by TILE_AGE
+        sharedX[x] = TILE_AGE + threadCol - (PER_THREAD_OVERLAPPED_COUNT_X - x) * BLOCK_DIM_X;
+        globalX[x] = globalBlockStartX + sharedX[x] - TILE_AGE;
     }
 
-    // Y shared and global
+    // Main block
 #pragma unroll
-    for (int y = 0; y < PER_THREAD_Y; y++) {
-        sharedY[y] = threadRow + blockDim.y * y + 1;
-        globalY[y] = blockRow * TILE_HEIGHT + sharedY[y] - 1;
+    for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
+        sharedX[x] = TILE_AGE + threadCol + BLOCK_DIM_X * (x - PER_THREAD_OVERLAPPED_COUNT_X);
+        globalX[x] = globalBlockStartX + sharedX[x] - TILE_AGE;
+    }
+
+    // Right of block
+#pragma unroll
+    for (int x = PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+        sharedX[x] = TILE_AGE + TILE_WIDTH + threadCol + BLOCK_DIM_X * (x - (PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X));
+        globalX[x] = globalBlockStartX + sharedX[x] - TILE_AGE;
+    }
+
+    // Y Indexes
+
+    // Overlapped region below block
+#pragma unroll
+    for (int y = 0; y < PER_THREAD_OVERLAPPED_COUNT_Y; y++) {
+        // Offset by TILE_AGE to make sure it's within the range since we're going back by TILE_AGE
+        sharedY[y] = TILE_AGE + threadRow - (PER_THREAD_OVERLAPPED_COUNT_Y - y) * BLOCK_DIM_Y;
+        // Remove the offset for the global index
+        globalY[y] = globalBlockStartY + sharedY[y] - TILE_AGE;
+    }
+
+    // Main block
+#pragma unroll
+    for (int y = PER_THREAD_OVERLAPPED_COUNT_Y; y < PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y; y++) {
+        sharedY[y] = TILE_AGE + threadRow + BLOCK_DIM_Y * (y - PER_THREAD_OVERLAPPED_COUNT_Y);
+        globalY[y] = globalBlockStartY + sharedY[y] - TILE_AGE;
+    }
+
+    // Above block
+#pragma unroll
+    for (int y = PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y; y < PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y + PER_THREAD_OVERLAPPED_COUNT_Y; y++) {
+        sharedY[y] = TILE_AGE + TILE_HEIGHT + threadRow + BLOCK_DIM_Y * (y - (PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y));
+        globalY[y] = globalBlockStartY + sharedY[y] - TILE_AGE;
     }
 
     // Global absolute index
 #pragma unroll
-    for (int y = 0; y < PER_THREAD_Y; y++) {
+    for (int y = 0; y < PER_THREAD_COMBINED_ITERATIONS_Y; y++) {
 #pragma unroll
-        for (int x = 0; x < PER_THREAD_X; x++) {
+        for (int x = 0; x < PER_THREAD_COMBINED_ITERATIONS_X; x++) {
             globalIndex[y][x] = globalX[x] + globalY[y] * data.width;
         }
     }
@@ -508,10 +544,11 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     /*
      * Copy into shared memory
      */
+    // TODO: Break into main block and overlapped regions blocks so the main block can at least be coalesced
 #pragma unroll
-    for (int y = 0; y < PER_THREAD_Y; y++) {
+    for (int y = 0; y < PER_THREAD_COMBINED_ITERATIONS_Y; y++) {
 #pragma unroll
-        for (int x = 0; x < PER_THREAD_X; x++) {
+        for (int x = 0; x < PER_THREAD_COMBINED_ITERATIONS_X; x++) {
             /*
              * We want to be doing block-contiguous reads, e.g. for 2x2 block dimension, 2 per thread for x and y
              * we want the read pattern to look like:
@@ -524,71 +561,222 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
              *
              * Optimizing the width for reads is the responsibility of the calling code.
              */
-            shared[sharedY[y]][sharedX[x]] = data.elements[globalIndex[y][x]];
+            if (globalX[x] >= 0 && globalX[x] < data.width && globalY[y] >= 0 && globalY[y] < data.height) {
+                shared[0][sharedY[y]][sharedX[x]] = data.elements[globalIndex[y][x]];
+            }
         }
     }
-
-    // Copy below-block dependencies into shared memory
-    if (threadRow == 0 && blockRow > 0) {
-#pragma unroll
-        for (int x = 0; x < PER_THREAD_X; x++) {
-            shared[0][sharedX[x]] = data.elements[globalIndex[0][x] - data.width];
-        }
-    }
-
-    // Copy above-block dependencies into shared memory
-    if (threadRow == blockDim.y - 1 && (blockRow + 1) * TILE_HEIGHT < data.height - 1) {
-#pragma unroll
-        for (int x = 0; x < PER_THREAD_X; x++) {
-            shared[TILE_HEIGHT + 1][sharedX[x]] = data.elements[globalIndex[PER_THREAD_Y - 1][x] + data.width];
-        }
-    }
-
-    // Copy left-of-block dependencies into shared memory
-    if (threadCol == 0 && blockCol > 0) {
-#pragma unroll
-        for (int y = 0; y < PER_THREAD_Y; y++) {
-            shared[sharedY[y]][0] = data.elements[globalIndex[y][0] - 1];
-        }
-    }
-
-    // Copy right-of-block dependencies into shared memory
-    if (threadCol == blockDim.x - 1 && (blockCol + 1) * TILE_WIDTH < data.width) {
-#pragma unroll
-        for (int y = 0; y < PER_THREAD_Y; y++) {
-            shared[sharedY[y]][TILE_WIDTH + 1] = data.elements[globalIndex[y][PER_THREAD_X - 1] + 1];
-        }
-    }
-
-    __syncthreads();
 
     /*
      * Calculate Values
      */
+    // TODO Brevity and clarity might be better than this mismatched thing after all
 #pragma unroll
-    for (int y = 0; y < PER_THREAD_Y; y++) {
-        int globY = globalY[y];
-        int sharY = sharedY[y];
-#pragma unroll
-        for (int x = 0; x < PER_THREAD_X; x++) {
-            int globX = globalX[x];
-            int sharX = sharedX[x];
+    for (int t = 1; t <= TILE_AGE; t++) {
+        __syncthreads();
 
-            if (globX > 0 && globX < data.width - 1 && globY > 0 && globY < data.height - 1) {
-                // Calculate new value
-                local[y][x] =
-                    (
-                        shared[sharY][sharX - 1] +
-                        shared[sharY][sharX] +
-                        shared[sharY][sharX + 1] +
-                        shared[sharY - 1][sharX] +
-                        shared[sharY + 1][sharX]
-                    ) * 0.2;
-            } else if (globX == 0 || globX == data.width - 1 || globY == 0 || globY == data.height - 1) {
-                // On the edge
-                local[y][x] = shared[sharY][sharX];
-            } else {
-                // Beyond the edge, shouldn't ever hit this unless we messed something up
+        int calculateStartX = max(globalBlockStartX - TILE_AGE + t - 1, 0);
+        int calculateEndX = min(globalBlockStartX + TILE_WIDTH + TILE_AGE - t, data.width - 1);
+        int calculateStartY = max(globalBlockStartY - TILE_AGE + t - 1, 0);
+        int calculateEndY = min(globalBlockStartY + TILE_HEIGHT + TILE_AGE - t, data.height - 1);
+
+#pragma unroll
+        for (int y = PER_THREAD_OVERLAPPED_COUNT_Y; y < PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y; y++) {
+            int globY = globalY[y];
+            int sharY = sharedY[y];
+
+            // First the main block since that's nicely laid out
+#pragma unroll
+            for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
+                int globX = globalX[x];
+                int sharX = sharedX[x];
+
+                if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
+                    // Calculate new value
+                    shared[t][sharY][sharX] =
+                        (
+                            shared[t-1][sharY][sharX - 1] +
+                            shared[t-1][sharY][sharX] +
+                            shared[t-1][sharY][sharX + 1] +
+                            shared[t-1][sharY - 1][sharX] +
+                            shared[t-1][sharY + 1][sharX]
+                        ) * 0.2f;
+                } else {
+                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                }
+            }
+
+            // Now the left overlapped regions
+#pragma unroll
+            for (int x = 0; x < PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+                int globX = globalX[x];
+                int sharX = sharedX[x];
+
+                if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
+                    shared[t][sharY][sharX] =
+                        (
+                            shared[t-1][sharY][sharX - 1] +
+                            shared[t-1][sharY][sharX] +
+                            shared[t-1][sharY][sharX + 1] +
+                            shared[t-1][sharY - 1][sharX] +
+                            shared[t-1][sharY + 1][sharX]
+                        ) * 0.2f;
+                } else {
+                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                }
+            }
+
+            // And the right overlapped regions
+#pragma unroll
+            for (int x = PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+                int globX = globalX[x];
+                int sharX = sharedX[x];
+
+                if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
+                    shared[t][sharY][sharX] =
+                        (
+                            shared[t-1][sharY][sharX - 1] +
+                            shared[t-1][sharY][sharX] +
+                            shared[t-1][sharY][sharX + 1] +
+                            shared[t-1][sharY - 1][sharX] +
+                            shared[t-1][sharY + 1][sharX]
+                        ) * 0.2f;
+                } else {
+                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                }
+            }
+        }
+
+        // Now the overlapped region below the block
+#pragma unroll
+        for (int y = 0; y < PER_THREAD_OVERLAPPED_COUNT_Y; y++) {
+            int globY = globalY[y];
+            int sharY = sharedY[y];
+#pragma unroll
+            for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
+                int globX = globalX[x];
+                int sharX = sharedX[x];
+
+                if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
+                    // Calculate new value
+                    shared[t][sharY][sharX] =
+                        (
+                            shared[t-1][sharY][sharX - 1] +
+                            shared[t-1][sharY][sharX] +
+                            shared[t-1][sharY][sharX + 1] +
+                            shared[t-1][sharY - 1][sharX] +
+                            shared[t-1][sharY + 1][sharX]
+                        ) * 0.2f;
+                } else {
+                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                }
+            }
+
+            // Now the left and below overlapped region
+#pragma unroll
+            for (int x = 0; x < PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+                int globX = globalX[x];
+                int sharX = sharedX[x];
+
+                if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
+                    shared[t][sharY][sharX] =
+                        (
+                            shared[t-1][sharY][sharX - 1] +
+                            shared[t-1][sharY][sharX] +
+                            shared[t-1][sharY][sharX + 1] +
+                            shared[t-1][sharY - 1][sharX] +
+                            shared[t-1][sharY + 1][sharX]
+                        ) * 0.2f;
+                } else {
+                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                }
+            }
+
+            // And the right and below overlapped region
+#pragma unroll
+            for (int x = PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+                int globX = globalX[x];
+                int sharX = sharedX[x];
+
+                if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
+                    shared[t][sharY][sharX] =
+                        (
+                            shared[t-1][sharY][sharX - 1] +
+                            shared[t-1][sharY][sharX] +
+                            shared[t-1][sharY][sharX + 1] +
+                            shared[t-1][sharY - 1][sharX] +
+                            shared[t-1][sharY + 1][sharX]
+                        ) * 0.2f;
+                } else {
+                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                }
+            }
+        }
+
+        // Overlapped region above the block
+#pragma unroll
+        for (int y = PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y; y < PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y + PER_THREAD_OVERLAPPED_COUNT_Y; y++) {
+            int globY = globalY[y];
+            int sharY = sharedY[y];
+
+#pragma unroll
+            for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
+                int globX = globalX[x];
+                int sharX = sharedX[x];
+
+                if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
+                    // Calculate new value
+                    shared[t][sharY][sharX] =
+                        (
+                            shared[t-1][sharY][sharX - 1] +
+                            shared[t-1][sharY][sharX] +
+                            shared[t-1][sharY][sharX + 1] +
+                            shared[t-1][sharY - 1][sharX] +
+                            shared[t-1][sharY + 1][sharX]
+                        ) * 0.2f;
+                } else {
+                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                }
+            }
+
+            // Now the left and below overlapped region
+#pragma unroll
+            for (int x = 0; x < PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+                int globX = globalX[x];
+                int sharX = sharedX[x];
+
+                if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
+                    shared[t][sharY][sharX] =
+                        (
+                            shared[t-1][sharY][sharX - 1] +
+                            shared[t-1][sharY][sharX] +
+                            shared[t-1][sharY][sharX + 1] +
+                            shared[t-1][sharY - 1][sharX] +
+                            shared[t-1][sharY + 1][sharX]
+                        ) * 0.2f;
+                } else {
+                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                }
+            }
+
+            // And the right and below overlapped region
+#pragma unroll
+            for (int x = PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X; x++) {
+                int globX = globalX[x];
+                int sharX = sharedX[x];
+
+                if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
+                    shared[t][sharY][sharX] =
+                        (
+                            shared[t-1][sharY][sharX - 1] +
+                            shared[t-1][sharY][sharX] +
+                            shared[t-1][sharY][sharX + 1] +
+                            shared[t-1][sharY - 1][sharX] +
+                            shared[t-1][sharY + 1][sharX]
+                        ) * 0.2f;
+                } else {
+                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                }
             }
         }
     }
@@ -596,10 +784,17 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     __syncthreads();
 
 #pragma unroll
-    for (int y = 0; y < PER_THREAD_Y; y++) {
+    for (int y = PER_THREAD_OVERLAPPED_COUNT_Y; y < PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y; y++) {
+        int sharY = sharedY[y];
+        int globY = globalY[y];
 #pragma unroll
-        for (int x = 0; x < PER_THREAD_X; x++) {
-            result.elements[globalIndex[y][x]] = local[y][x];
+        for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
+            int sharX = sharedX[x];
+            int globX = globalX[x];
+
+            if (globX >= 0 && globX < data.width && globY >= 0 && globY < data.height) {
+                result.elements[globalIndex[y][x]] = shared[TILE_AGE][sharY][sharX];
+            }
         }
     }
 }
@@ -837,7 +1032,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
     } else if (args.dimensions == 2) {
         dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1));
         dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y);
-        for (int t = 0; t < args.iterations; t++) {
+        for (int t = 0; t < args.iterations / TILE_AGE; t++) {
             jacobi2d<<<blocks, threads>>>(deviceA, deviceB);
 //            checkCUDAError("jacobi2d", true);
             swap(deviceA, deviceB);
@@ -845,7 +1040,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
     } else {
         dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1), max(args.size / TILE_DEPTH, 1));
         dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y, TILE_DEPTH / PER_THREAD_Z);
-        for (int t = 0; t < args.iterations; t++) {
+        for (int t = 0; t < args.iterations / TILE_AGE; t++) {
             jacobi3d<<<blocks, threads>>>(deviceA, deviceB);
 //            checkCUDAError("jacobi3d", true);
             swap(deviceA, deviceB);
