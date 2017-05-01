@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <unistd.h>
+#include <sys/time.h>
 
 using namespace std;
 
@@ -511,6 +512,7 @@ Matrix initialize_device(Matrix A, bool copyToDevice) {
 
 	size_t sizeA = A.width * A.height * A.depth * sizeof(float);
 
+
 	HANDLE_ERROR(cudaMalloc((void ** ) &deviceA.elements, sizeA));
 	if (copyToDevice) {
 		HANDLE_ERROR(
@@ -581,6 +583,8 @@ void print_data(float *data, int size, int dimensions) {
 // Main
 int main(int argc, char *argv[]) {
 	Args args = parse_arguments(argc, argv);
+    float runtime;
+    struct timeval start, end;
 	Matrix A, B;
 	A = initialize_matrix(args.dimensions, args.size, args.size, args.size);
 	B = initialize_matrix(args.dimensions, args.size, args.size, args.size);
@@ -588,7 +592,11 @@ int main(int argc, char *argv[]) {
 	atexit(cleanupCuda);
 
 	//if (args.debug) { print_data(data, args.size, args.dimensions); }
+    gettimeofday( &start, NULL );
 	callKernel(args, A, B);
+    gettimeofday( &end, NULL );
+    runtime = ( ( end.tv_sec  - start.tv_sec ) * 1000.0 ) + ( ( end.tv_usec - start.tv_usec ) / 1000.0 );
+    printf( "Processing Time: %4.4f milliseconds\n", runtime );
 	if (args.debug) {
 		print_data(B.elements, args.size, args.dimensions);
 	}
