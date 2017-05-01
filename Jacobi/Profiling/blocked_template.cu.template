@@ -544,7 +544,7 @@ Matrix initialize_device(Matrix A, bool copyToDevice) {
     return deviceA;
 }
 
-void callKernel(Args args, Matrix A, Matrix B) {
+void callKernel(Matrix A, Matrix B) {
     Matrix deviceA, deviceB;
 
     deviceA = initialize_device(A, true);
@@ -552,7 +552,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
 
     if (DIMENSIONS == 1) {
         dim3 blocks(SIZE / TILE_WIDTH);
-        dim3 threads(BLOCK_WIDTH / PER_THREAD_X);
+        dim3 threads(TILE_WIDTH / PER_THREAD_X);
 
         for (int t = 0; t < ITERATIONS; t++) {
             jacobi1d<<<blocks, threads>>>(deviceA, deviceB);
@@ -627,5 +627,5 @@ int main(int argc, char *argv[]) {
     gettimeofday(&end, NULL);
     runtime = ((end.tv_sec - start.tv_sec) * 1000.0) + ((end.tv_usec - start.tv_usec) / 1000.0);
     printf("Processing Time: %4.4f milliseconds\n", runtime);
-//    if (true) { print_data(B.elements, args.size, args.dimensions); }
+//    if (true) { print_data(B.elements, SIZE, DIMENSIONS); }
 }
