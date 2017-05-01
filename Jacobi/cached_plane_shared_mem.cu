@@ -246,12 +246,12 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth =
  * CUDA KERNELS *
  ****************/
 
-#define TILE_WIDTH 32 
-#define TILE_HEIGHT 32
-#define TILE_DEPTH 1
+#define TILE_WIDTH 2 
+#define TILE_HEIGHT 2 
+#define TILE_DEPTH 4 
 #define PER_THREAD_X 1
 #define PER_THREAD_Y 1
-#define PER_THREAD_Z 8 
+#define PER_THREAD_Z 4 
 
 __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 	int threadCol = threadIdx.x;
@@ -272,8 +272,10 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 
 	// Shared and local data arrays
 	__shared__ float shared[TILE_DEPTH + 2][TILE_HEIGHT + 2][TILE_WIDTH + 2];
+	//printf("here 1\n");
 	float local[PER_THREAD_Z][PER_THREAD_Y][PER_THREAD_X];
 
+//	printf("here 2\n");
 	/*
 	 * Calculate indexes into the global and shared arrays
 	 */
@@ -285,6 +287,7 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 		globalX[x] = blockCol * TILE_WIDTH + sharedX[x] - 1;
 	}
 
+//	printf("here 3\n");
 	// Y shared and global
 #pragma unroll
 	for (int y = 0; y < PER_THREAD_Y; y++) {
@@ -292,13 +295,17 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 		globalY[y] = blockRow * TILE_HEIGHT + sharedY[y] - 1;
 	}
 
+//	printf("here 4\n");
 	// Z shared and global
 #pragma unroll
 	for (int z = 0; z < PER_THREAD_Z; z++) {
 		sharedZ[z] = threadDep + blockDim.z * z + 1;
+//		printf("tidx=%d,tidy=%d,tidz=%d, sharedZ[%d] = %d\n",threadIdx.x,threadIdx.y,threadIdx.z,z,sharedZ[z]);
 		globalZ[z] = blockDep * TILE_DEPTH + sharedZ[z] - 1;
 	}
-
+//
+//	printf("here 5\n");
+//	printf("sizeof(sharedZ) = %d ", sizeof(sharedZ));
 	// Global absolute index
 #pragma unroll
 	for (int z = 0; z < PER_THREAD_Z; z++) {
@@ -308,7 +315,11 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 			int yTemp = globalY[y] * data.width;
 #pragma unroll
 			for (int x = 0; x < PER_THREAD_X; x++) {
+//				printf("tidx=%d,tidy=%d,tidz=%d, (x,y,z) = (%d,%d,%d)\n",threadIdx.x,threadIdx.y,threadIdx.z,x,y,z);
+//				printf("tidx=%d,tidy=%d,tidz=%d, globalIndex[%d][%d][%d] = %d\n",threadIdx.x,threadIdx.y,threadIdx.z,z,y,x);
+//				printf("tidx=%d,tidy=%d,tidz=%d \n",threadIdx.x,threadIdx.y,threadIdx.z);
 				globalIndex[z][y][x] = globalX[x] + yTemp + zTemp;
+//				printf("After globalIndex assignment\n");
 			}
 		}
 	}
@@ -316,18 +327,35 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 	/*
 	 * Copy into shared memory
 	 */
+//	printf("sizeof(shared) = %d\n",sizeof(shared));
+//	printf("sizeof(sharedZ) = %d\n",sizeof(sharedZ));
+//	printf("sizeof(sharedY) = %d\n",sizeof(sharedY));
+//	printf("sizeof(sharedX) = %d\n",sizeof(sharedX));
+//    for (int z = 0; z < PER_THREAD_Z; z++) {
+//        for (int y = 0; y < PER_THREAD_Y; y++) {
+//            for (int x = 0; x < PER_THREAD_X; x++) {
+//                printf("Block(%d, %d, %d) Thread(%d, %d, %d) Iter(%d, %d, %d) Shared(%d, %d, %d) Global(%d, %d, %d) GI(%d)\n", blockCol, blockRow, blockDep, threadCol, threadRow, threadDep, z, y, x, sharedX[x], sharedY[y], sharedZ[z], globalX[x], globalY[y], globalZ[z], globalIndex[z][y][x]);
+//            }
+//        }
+//    }
 #pragma unroll
 	for (int z = 0; z < PER_THREAD_Z; z++) {
 #pragma unroll
 		for (int y = 0; y < PER_THREAD_Y; y++) {
 #pragma unroll
 			for (int x = 0; x < PER_THREAD_X; x++) {
+//				if(threadIdx.x == 0) {printf("here 7\n");
+//					printf("sharedZ[%d] = %d, sharedY[%d] = %d, sharedX[%d] = %d\n",z,sharedZ[z],y,sharedY[y],x,sharedX[x]); 
+//				}
+		//		printf("(%d,%d,%d): shared[%d][%d][%d] = %d \n", threadIdx.x,threadIdx.y,threadIdx.z,sharedZ[z],sharedZ[z],sharedZ[z],shared[sharedZ[z]][sharedY[y]][sharedX[x]]);
+	//				printf("sharedZ[%d] = %d, sharedY[%d] = %d, sharedX[%d] = %d\n",z,sharedZ[z],y,sharedY[y],x,sharedX[x]); 
 				shared[sharedZ[z]][sharedY[y]][sharedX[x]] =
 						data.elements[globalIndex[z][y][x]];
 			}
 		}
 	}
 
+//	printf("here 75\n");
 	// Copy below-block dependencies into shared memory
 	if (threadRow == 0 && blockRow > 0) {
 #pragma unroll
@@ -340,6 +368,7 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 		}
 	}
 
+//	printf("here 8\n");
 	// Copy above-block dependencies into shared memory
 	if (threadRow == blockDim.y - 1
 			&& (blockRow + 1) * TILE_HEIGHT < data.height - 1) {
@@ -354,6 +383,7 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 		}
 	}
 
+//	printf("here 9\n");
 	// Copy left-of-block dependencies into shared memory
 	if (threadCol == 0 && blockCol > 0) {
 #pragma unroll
@@ -365,6 +395,8 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 			}
 		}
 	}
+
+//	printf("here 10\n");
 
 	// Copy right-of-block dependencies into shared memory
 	if (threadCol == blockDim.x - 1
@@ -379,6 +411,7 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 		}
 	}
 
+//	printf("here 11\n");
 	// Copy in-front-of-block dependencies into shared memory
 	if (threadDep == 0 && blockDep > 0) {
 #pragma unroll
@@ -392,6 +425,7 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 		}
 	}
 
+//	printf("here 12\n");
 	// Copy behind-block dependencies into shared memory
 	if (threadDep == blockDim.z - 1
 			&& (blockDep + 1) * TILE_DEPTH < data.depth) {
@@ -406,6 +440,7 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 		}
 	}
 
+//	printf("here 13\n");
 	__syncthreads();
 
 	/*
@@ -446,6 +481,7 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 		}
 	}
 
+//	printf("here 14\n");
 	__syncthreads();
 
 #pragma unroll
@@ -458,6 +494,7 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 			}
 		}
 	}
+	//printf("here 2\n");
 }
 
 /********************
@@ -490,17 +527,19 @@ void callKernel(Args args, Matrix A, Matrix B) {
 	deviceA = initialize_device(A, true);
 	deviceB = initialize_device(B, false);
 
+//	size_t size = 5000;
+//	cudaDeviceSetLimit(cudaLimitPrintfFifoSize,size);
 	dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1),
-		1);
-	dim3 threads(32, 32, 1);
+ args.size/TILE_DEPTH);
+	dim3 threads(TILE_WIDTH, TILE_HEIGHT, 1);
 	for (int t = 0; t < args.iterations; t++) {
 		cached_plane_shared_mem<<<blocks, threads>>>(deviceA, deviceB);
-//            checkCUDAError("jacobi3d", true);
+        checkCUDAError("cached_plane_shared_mem", true);
 		swap(deviceA, deviceB);
 	}
-    printf("sizeof(deviceA) = %d\n", sizeof(deviceA));
-    printf("sizeof(deviceB) = %d\n", sizeof(deviceB));
-    printf("sizeof(B) = %d\n", sizeof(B));
+  //  printf("sizeof(deviceA) = %d\n", sizeof(deviceA));
+   // printf("sizeof(deviceB) = %d\n", sizeof(deviceB));
+    //printf("sizeof(B) = %d\n", sizeof(B));
 	HANDLE_ERROR(
 			cudaMemcpy(B.elements, deviceA.elements,
 					A.width * A.height * A.depth * sizeof(float),
@@ -509,7 +548,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
 
 // Data output
 void print_data(float *data, int size, int dimensions) {
-	if (size > 13) {
+	if (size > 20) {
 		cerr << "Data too big to print\n" << endl;
 		return;
 	}
