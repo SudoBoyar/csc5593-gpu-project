@@ -26,8 +26,9 @@ if __name__ == '__main__':
         print 'Only heracles or dozer'
         exit(1)
 
-    baseDir = os.path.dirname(os.path.realpath(__file__))
-    blockedTemplate = os.path.join(baseDir, 'blocked_template.cu.template')
+	baseDir = os.path.dirname(os.path.realpath(__file__))
+	blockedTemplate = os.path.join(baseDir, 'blocked_template.cu.template')
+	cachedPlaneTemplate = os.path.join(baseDir, 'cached_plane_shared_mem_template.cu.template')
     naiveTemplate = os.path.join(baseDir, 'naive_template.cu.template')
 
     binaries = []
@@ -40,10 +41,13 @@ if __name__ == '__main__':
             naiveTarget = os.path.join(baseDir, name + '_naive.cu')
             blockedOutfile = os.path.join(baseDir, name + '_blocked')
             naiveOutfile = os.path.join(baseDir, name + '_naive')
+            cachedPlaneTarget = os.path.join(baseDir, name + '_naive.cu')
+            cachedPlaneOutfile = os.path.join(baseDir, name + '_blocked')
 
             if platform == 'heracles':
                 makefileCases += heraclesMakefileCaseTemplate.format(**{'name': name, 'file': blockedTarget, 'outFile': blockedOutfile})
                 makefileCases += heraclesMakefileCaseTemplate.format(**{'name': name, 'file': naiveTarget, 'outFile': naiveOutfile})
+                makefileCases += heraclesMakefileCaseTemplate.format(**{'name': name, 'file': cachedPlaneTarget, 'outFile': cachedPlaneOutfile})
 
             binaries.append(name)
 
