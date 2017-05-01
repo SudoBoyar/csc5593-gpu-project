@@ -1,15 +1,16 @@
 import os
 import sys
 
-# define DIMENSIONS %%DIMENSIONS%%
-# define ITERATIONS %%ITERATIONS%%
-# define SIZE %%SIZE%%
-# define TILE_WIDTH %%TILE_WIDTH%%
-# define TILE_HEIGHT %%TILE_HEIGHT%%
-# define TILE_DEPTH %%TILE_DEPTH%%
-# define PER_THREAD_X %%PER_THREAD_X%%
-# define PER_THREAD_Y %%PER_THREAD_Y%%
-# define PER_THREAD_Z %%PER_THREAD_Z%%
+#define TILE_AGE %%TILE_AGE%%
+#define DIMENSIONS %%DIMENSIONS%%
+#define ITERATIONS %%ITERATIONS%%
+#define SIZE %%SIZE%%
+#define TILE_WIDTH %%TILE_WIDTH%%
+#define TILE_HEIGHT %%TILE_HEIGHT%%
+#define TILE_DEPTH %%TILE_DEPTH%%
+#define PER_THREAD_X %%PER_THREAD_X%%
+#define PER_THREAD_Y %%PER_THREAD_Y%%
+#define PER_THREAD_Z %%PER_THREAD_Z%%
 
 cases = {
     # SET 1
@@ -24,6 +25,7 @@ cases = {
             'TILE_WIDTH': 32,
             'TILE_HEIGHT': 32,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -35,6 +37,7 @@ cases = {
             'TILE_WIDTH': 32,
             'TILE_HEIGHT': 32,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -46,6 +49,7 @@ cases = {
             'TILE_WIDTH': 32,
             'TILE_HEIGHT': 32,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -57,6 +61,7 @@ cases = {
             'TILE_WIDTH': 32,
             'TILE_HEIGHT': 32,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -68,6 +73,7 @@ cases = {
             'TILE_WIDTH': 32,
             'TILE_HEIGHT': 32,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -85,6 +91,7 @@ cases = {
             'TILE_WIDTH': 1,
             'TILE_HEIGHT': 1024,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -96,6 +103,7 @@ cases = {
             'TILE_WIDTH': 2,
             'TILE_HEIGHT': 512,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -107,6 +115,7 @@ cases = {
             'TILE_WIDTH': 4,
             'TILE_HEIGHT': 256,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -118,6 +127,7 @@ cases = {
             'TILE_WIDTH': 8,
             'TILE_HEIGHT': 128,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -129,6 +139,7 @@ cases = {
             'TILE_WIDTH': 16,
             'TILE_HEIGHT': 64,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -140,6 +151,7 @@ cases = {
             'TILE_WIDTH': 32,
             'TILE_HEIGHT': 32,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -151,6 +163,7 @@ cases = {
             'TILE_WIDTH': 64,
             'TILE_HEIGHT': 16,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -162,6 +175,7 @@ cases = {
             'TILE_WIDTH': 128,
             'TILE_HEIGHT': 8,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -173,6 +187,7 @@ cases = {
             'TILE_WIDTH': 256,
             'TILE_HEIGHT': 4,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -184,6 +199,7 @@ cases = {
             'TILE_WIDTH': 512,
             'TILE_HEIGHT': 2,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -195,6 +211,7 @@ cases = {
             'TILE_WIDTH': 1024,
             'TILE_HEIGHT': 1,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -212,6 +229,7 @@ cases = {
             'TILE_WIDTH': 32,
             'TILE_HEIGHT': 32,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 1,
             'PER_THREAD_Y': 1,
             'PER_THREAD_Z': 1,
@@ -223,6 +241,7 @@ cases = {
             'TILE_WIDTH': 32,
             'TILE_HEIGHT': 32,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 2,
             'PER_THREAD_Y': 2,
             'PER_THREAD_Z': 2,
@@ -234,6 +253,7 @@ cases = {
             'TILE_WIDTH': 32,
             'TILE_HEIGHT': 32,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 4,
             'PER_THREAD_Y': 4,
             'PER_THREAD_Z': 4,
@@ -245,6 +265,7 @@ cases = {
             'TILE_WIDTH': 32,
             'TILE_HEIGHT': 32,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 8,
             'PER_THREAD_Y': 8,
             'PER_THREAD_Z': 8,
@@ -256,6 +277,7 @@ cases = {
             'TILE_WIDTH': 32,
             'TILE_HEIGHT': 32,
             'TILE_DEPTH': 1,
+            'TILE_AGE': 1,
             'PER_THREAD_X': 16,
             'PER_THREAD_Y': 16,
             'PER_THREAD_Z': 16,

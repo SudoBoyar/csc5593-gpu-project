@@ -1,10 +1,7 @@
-
 #include <stdio.h>
 #include <iostream>
 #include <unistd.h>
-
-// Shorthand for formatting and printing usage options to stderr
-#define fpe(msg) fprintf(stderr, "\t%s\n", msg);
+#include <sys/time.h>
 
 // Shorthand for handling CUDA errors.
 #define HANDLE_ERROR(err)  ( HandleError( err, __FILE__, __LINE__ ) )
@@ -331,6 +328,13 @@ int main(int argc, char *argv[]) {
     A = initialize_matrix(DIMENSIONS, SIZE, SIZE, SIZE);
     B = initialize_matrix(DIMENSIONS, SIZE, SIZE, SIZE);
 
+    float runtime;
+    struct timeval start, end;
+
+    gettimeofday(&start, NULL);
     callKernel(A, B);
+    gettimeofday(&end, NULL);
+    runtime = ((end.tv_sec - start.tv_sec) * 1000.0) + ((end.tv_usec - start.tv_usec) / 1000.0);
+    printf("Processing Time: %4.4f milliseconds\n", runtime);
 //    if (true) { print_data(B.elements, SIZE, DIMENSIONS); }
 }
