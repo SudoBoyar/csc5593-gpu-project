@@ -59,18 +59,17 @@ void cleanupCuda(void) {
  *********************/
 
 struct Args {
-    bool debug = false;
-    bool sequential = false;
-    bool blocked = false;
-    bool overlapped = false;
+    bool debug;
+    bool sequential;
+    bool blocked;
+    bool overlapped;
     // Data attributes
-    int size = 1024, dimensions = 2, alloc_size;
-    int xSize = 1, ySize = 1, zSize = 1;
-    int xBlockSize = 1, yBlockSize = 1, zBlockSize = 1, tBlockSize;
+    int size, dimensions, alloc_size;
+    int xSize, ySize, zSize;
+    int xBlockSize, yBlockSize, zBlockSize, tBlockSize;
     // Run attributes
-    int grid_size = 1, block_count = -1, thread_count = -1, iterations = 1000;
+    int grid_size, block_count, thread_count, iterations;
 };
-
 
 void usage(char *prog_name, string msg) {
     if (msg.size() > 0) {
@@ -99,6 +98,18 @@ void usage(char *prog_name, string msg) {
 
 Args parse_arguments(int argc, char *argv[]) {
     Args args = Args();
+    args.debug = false;
+    args.sequential = false;
+    args.blocked = false;
+    args.overlapped = false;
+    args.size = 1024;
+    args.dimensions = 2;
+    args.xSize = args.ySize = args.zSize = 1;
+    args.xBlockSize = args.yBlockSize = args.zBlockSize = 1;
+    args.grid_size = 1;
+    args.block_count = -1;
+    args.thread_count = -1;
+    args.iterations = 1000;
 
     int opt;
     // Parse args

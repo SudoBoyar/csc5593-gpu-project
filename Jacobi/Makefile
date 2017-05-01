@@ -1,16 +1,21 @@
 CC=g++
-BINARIES=jacobi_seq
+BINARIES=jacobi_seq naive_gpu blocked_gpu overlapped_gpu
 
-mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
-JACOBI_PATH := $(notdir $(patsubst %/,%,$(dir $(mkfile_path))))
+TARGET_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 all: $(BINARIES)
 
 jacobi_seq: jacobi.cpp data_utils.h parse_args.h sequential.h sequential_blocked.h sequential_overlapped_tiling.h
-	$(CC) jacobi.cpp data_utils.h parse_args.h sequential.h sequential_blocked.h sequential_overlapped_tiling.h -o jacobi_seq
+	$(CC) -std=c++11 jacobi.cpp data_utils.h parse_args.h sequential.h sequential_blocked.h sequential_overlapped_tiling.h -o jacobi_seq
 
-jacobi_gpu: jacobi.cu matrix.h matrix_utils.h naive.cu
-	ssh node18 nvcc $(JACOBI_PATH)/jacobi.cu $(JACOBI_PATH)/matrix.h $(JACOBI_PATH)/matrix_utils.h $(JACOBI_PATH)/naive.cu -o jacobi_gpu
+naive_gpu: $(TARGET_DIR)/single_file_naive.cu
+	ssh node18 nvcc -std=c++11 $(TARGET_DIR)/single_file_naive.cu -o $(TARGET_DIR)/naive_gpu
+
+blocked_gpu: $(TARGET_DIR)/single_file_blocked.cu
+	ssh node18 nvcc -std=c++11 $(TARGET_DIR)/single_file_blocked.cu -o $(TARGET_DIR)/blocked_gpu
+
+overlapped_gpu: $(TARGET_DIR)/single_file_overlapped.cu
+	ssh node18 nvcc -std=c++11 $(TARGET_DIR)/single_file_overlapped.cu -o $(TARGET_DIR)/overlapped_gpu
 
 clean:
-	rm -f $(BINARIES) jacobi_gpu
+	rm -f $(BINARIES)
