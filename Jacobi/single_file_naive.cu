@@ -1,7 +1,7 @@
-
 #include <stdio.h>
 #include <iostream>
 #include <unistd.h>
+#include <sys/time.h>
 
 // Shorthand for formatting and printing usage options to stderr
 #define fpe(msg) fprintf(stderr, "\t%s\n", msg);

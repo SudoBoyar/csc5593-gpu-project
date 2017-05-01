@@ -1,7 +1,7 @@
-
 #include <stdio.h>
 #include <iostream>
 #include <unistd.h>
+#include <sys/time.h>
 
 // Shorthand for handling CUDA errors.
 #define HANDLE_ERROR(err)  ( HandleError( err, __FILE__, __LINE__ ) )
