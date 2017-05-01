@@ -53,16 +53,16 @@ void cleanupCuda(void) {
 }
 
 struct Args {
-    bool debug = false;
-    bool sequential = false;
-    bool blocked = false;
-    bool overlapped = false;
+    bool debug;
+    bool sequential;
+    bool blocked;
+    bool overlapped;
     // Data attributes
-    int size = 1024, dimensions = 2, alloc_size, thread_dim = 8;
-    int xSize = 1, ySize = 1, zSize = 1;
-    int xBlockSize = 1, yBlockSize = 1, zBlockSize = 1, tBlockSize;
+    int size, dimensions, alloc_size, thread_dim;
+    int xSize, ySize, zSize;
+    int xBlockSize, yBlockSize, zBlockSize, tBlockSize;
     // Run attributes
-    int grid_size = 1, block_count = -1, thread_count = -1, iterations = 1000;
+    int grid_size, block_count, thread_count, iterations;
 };
 
 
