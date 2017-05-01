@@ -246,12 +246,12 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth =
  * CUDA KERNELS *
  ****************/
 
-#define TILE_WIDTH 4
-#define TILE_HEIGHT 2
-#define TILE_DEPTH 2
+#define TILE_WIDTH 32 
+#define TILE_HEIGHT 32
+#define TILE_DEPTH 1
 #define PER_THREAD_X 1
 #define PER_THREAD_Y 1
-#define PER_THREAD_Z 2
+#define PER_THREAD_Z 8 
 
 __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 	int threadCol = threadIdx.x;
@@ -271,7 +271,7 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 	int sharedZ[PER_THREAD_Z];
 
 	// Shared and local data arrays
-	extern __shared__ float sharedshared[TILE_DEPTH + 2][TILE_HEIGHT + 2][TILE_WIDTH + 2];
+	__shared__ float shared[TILE_DEPTH + 2][TILE_HEIGHT + 2][TILE_WIDTH + 2];
 	float local[PER_THREAD_Z][PER_THREAD_Y][PER_THREAD_X];
 
 	/*
@@ -491,14 +491,16 @@ void callKernel(Args args, Matrix A, Matrix B) {
 	deviceB = initialize_device(B, false);
 
 	dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1),
-			max(args.size / TILE_DEPTH, 1));
+		1);
 	dim3 threads(32, 32, 1);
 	for (int t = 0; t < args.iterations; t++) {
 		cached_plane_shared_mem<<<blocks, threads>>>(deviceA, deviceB);
 //            checkCUDAError("jacobi3d", true);
 		swap(deviceA, deviceB);
 	}
-
+    printf("sizeof(deviceA) = %d\n", sizeof(deviceA));
+    printf("sizeof(deviceB) = %d\n", sizeof(deviceB));
+    printf("sizeof(B) = %d\n", sizeof(B));
 	HANDLE_ERROR(
 			cudaMemcpy(B.elements, deviceA.elements,
 					A.width * A.height * A.depth * sizeof(float),
