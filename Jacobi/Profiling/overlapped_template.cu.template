@@ -4,9 +4,6 @@
 
 using namespace std;
 
-// Shorthand for formatting and printing usage options to stderr
-#define fpe(msg) fprintf(stderr, "\t%s\n", msg);
-
 // Shorthand for handling CUDA errors.
 #define HANDLE_ERROR(err)  ( HandleError( err, __FILE__, __LINE__ ) )
 
@@ -56,154 +53,6 @@ void cleanupCuda(void) {
 /*********************
  * End CUDA Utilites *
  *********************/
-
-struct Args {
-    bool debug;
-    bool sequential;
-    bool blocked;
-    bool overlapped;
-    // Data attributes
-    int size, dimensions, alloc_size;
-    int xSize, ySize, zSize;
-    int xBlockSize, yBlockSize, zBlockSize, tBlockSize;
-    // Run attributes
-    int grid_size, block_count, thread_count, iterations;
-};
-
-void usage(char *prog_name, string msg) {
-    if (msg.size() > 0) {
-        fputs(msg.c_str(), stderr);
-    }
-
-    fprintf(stderr, "%s\n", prog_name);
-    fprintf(stderr, "Options are:\n");
-    fpe("-n<size> Set data size (default: 1024)");
-    fpe("-d<dims> Set number of data dimensions (1, 2, or 3) (default: 2)");
-    fpe("-g<size> Set grid size");
-    fpe("-b<num>  Set block count");
-    fpe("-t<num>  Set thread count");
-    fpe("-i<iter> Number of iterations to perform (default: 1000)");
-    fpe("-x<size> X Dimension");
-    fpe("-y<size> Y Dimension");
-    fpe("-z<size> Z Dimension");
-    fpe("-T<size> T Dimension");
-    fpe("-S       Execute sequential, CPU version");
-    fpe("-B       Execute blocked sequential, CPU version");
-    fpe("-O       Execute sequential overlapped tiling, CPU version");
-    fpe("-D       Print debug info");
-    fpe("-h       Print usage info (this message)");
-    exit(EXIT_FAILURE);
-}
-
-Args parse_arguments(int argc, char *argv[]) {
-    Args args = Args();
-    args.debug = false;
-    args.sequential = false;
-    args.blocked = false;
-    args.overlapped = false;
-    args.size = 1024;
-    args.dimensions = 2;
-    args.xSize = args.ySize = args.zSize = 1;
-    args.xBlockSize = args.yBlockSize = args.zBlockSize = 1;
-    args.grid_size = 1;
-    args.block_count = -1;
-    args.thread_count = -1;
-    args.iterations = 1000;
-
-    int opt;
-    // Parse args
-    while ((opt = getopt(argc, argv, "n:d:g:b:t:i:x:y:z:T:hSBOD")) != -1) {
-        switch (opt) {
-            case 'D':
-                args.debug = true;
-                break;
-            case 'S':
-                args.sequential = true;
-                break;
-            case 'B':
-                args.blocked = true;
-                break;
-            case 'O':
-                args.overlapped = true;
-                break;
-            case 'n':
-                args.size = atoi(optarg);
-                break;
-            case 'd':
-                args.dimensions = atoi(optarg);
-                break;
-            case 'g':
-                args.grid_size = atoi(optarg);
-                break;
-            case 'b':
-                args.block_count = atoi(optarg);
-                break;
-            case 't':
-                args.thread_count = atoi(optarg);
-                break;
-            case 'i':
-                args.iterations = atoi(optarg);
-                break;
-            case 'x':
-                args.xBlockSize = atoi(optarg);
-                break;
-            case 'X':
-                args.xSize = atoi(optarg);
-                break;
-            case 'y':
-                args.yBlockSize = atoi(optarg);
-                break;
-            case 'Y':
-                args.ySize = atoi(optarg);
-                break;
-            case 'z':
-                args.zBlockSize = atoi(optarg);
-                break;
-            case 'Z':
-                args.zSize = atoi(optarg);
-                break;
-            case 'T':
-                args.tBlockSize = atoi(optarg);
-                break;
-            case 'h':
-                usage(argv[0], "");
-                break;
-            default:
-                usage(argv[0], "Unrecognized option\n");
-        }
-    }
-
-    // check sizes
-    if (args.size <= 0) {
-        cout << "Data size must be larger than 0" << endl;
-        exit(EXIT_FAILURE);
-    }
-
-    if (args.dimensions <= 0 || args.dimensions >= 4) {
-        cerr << "Data must be 1, 2, or 3 dimensions" << endl;
-        exit(EXIT_FAILURE);
-    }
-
-    // Calculations
-    if (args.dimensions == 1) {
-        args.alloc_size = args.size;
-    } else if (args.dimensions == 2) {
-        args.alloc_size = args.size * args.size;
-    } else {
-        args.alloc_size = args.size * args.size * args.size;
-    }
-
-    if (args.thread_count > 0) {
-        args.block_count = args.alloc_size / args.thread_count;
-    } else if (args.block_count > 0) {
-        args.thread_count = args.alloc_size / args.block_count;
-    } else {
-        args.thread_count = 16;
-        args.block_count = args.alloc_size / args.thread_count;
-    }
-
-    return args;
-}
 
 typedef struct {
     int dimensions;
@@ -283,13 +132,16 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
  * CUDA KERNELS *
  ****************/
 
-#define TILE_WIDTH 4
-#define TILE_HEIGHT 2
-#define TILE_DEPTH 2
-#define TILE_AGE 2
-#define PER_THREAD_X 2
-#define PER_THREAD_Y 2
-#define PER_THREAD_Z 2
+#define DIMENSIONS 3 // %%DIMENSIONS%%
+#define ITERATIONS 1 // %%ITERATIONS%%
+#define SIZE 1 // %%SIZE%%
+#define TILE_WIDTH 4 // %%TILE_WIDTH%%
+#define TILE_HEIGHT 2 // %%TILE_HEIGHT%%
+#define TILE_DEPTH 2 // %%TILE_DEPTH%%
+#define TILE_AGE 2 // %%TILE_AGE%%
+#define PER_THREAD_X 2 // %%PER_THREAD_X%%
+#define PER_THREAD_Y 2 // %%PER_THREAD_X%%
+#define PER_THREAD_Z 2 // %%PER_THREAD_X%%
 #define BLOCK_DIM_X TILE_WIDTH/PER_THREAD_X
 #define BLOCK_DIM_Y TILE_HEIGHT/PER_THREAD_Y
 #define BLOCK_DIM_Z TILE_DEPTH/PER_THREAD_Z
@@ -1041,33 +893,33 @@ Matrix initialize_device(Matrix A, bool copyToDevice) {
     return deviceA;
 }
 
-void callKernel(Args args, Matrix A, Matrix B) {
+void callKernel(Matrix A, Matrix B) {
     Matrix deviceA, deviceB;
 
     deviceA = initialize_device(A, true);
     deviceB = initialize_device(B, false);
 
-    if (args.dimensions == 1) {
-        dim3 blocks(max(args.size / TILE_WIDTH, 1));
+    if (DIMENSIONS == 1) {
+        dim3 blocks(SIZE / TILE_WIDTH);
         dim3 threads(TILE_WIDTH / PER_THREAD_X);
 
-        for (int t = 0; t < args.iterations / TILE_AGE; t++) {
+        for (int t = 0; t < ITERATIONS / TILE_AGE; t++) {
             jacobi1d<<<blocks, threads>>>(deviceA, deviceB);
 //            checkCUDAError("jacobi1d", true);
             swap(deviceA, deviceB);
         }
-    } else if (args.dimensions == 2) {
-        dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1));
+    } else if (DIMENSIONS == 2) {
+        dim3 blocks(SIZE / TILE_WIDTH, SIZE / TILE_HEIGHT);
         dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y);
-        for (int t = 0; t < args.iterations / TILE_AGE; t++) {
+        for (int t = 0; t < ITERATIONS / TILE_AGE; t++) {
             jacobi2d<<<blocks, threads>>>(deviceA, deviceB);
 //            checkCUDAError("jacobi2d", true);
             swap(deviceA, deviceB);
         }
     } else {
-        dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1), max(args.size / TILE_DEPTH, 1));
+        dim3 blocks(SIZE / TILE_WIDTH, SIZE / TILE_HEIGHT, SIZE / TILE_DEPTH);
         dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y, TILE_DEPTH / PER_THREAD_Z);
-        for (int t = 0; t < args.iterations / TILE_AGE; t++) {
+        for (int t = 0; t < ITERATIONS / TILE_AGE; t++) {
             jacobi3d<<<blocks, threads>>>(deviceA, deviceB);
 //            checkCUDAError("jacobi3d", true);
             swap(deviceA, deviceB);
@@ -1111,18 +963,17 @@ void print_data(float *data, int size, int dimensions) {
 
 // Main
 int main(int argc, char *argv[]) {
-    Args args = parse_arguments(argc, argv);
     Matrix A, B;
-    A = initialize_matrix(args.dimensions, args.size, args.size, args.size);
-    B = initialize_matrix(args.dimensions, args.size, args.size, args.size);
+    A = initialize_matrix(DIMENSIONS, SIZE, SIZE, SIZE);
+    B = initialize_matrix(DIMENSIONS, SIZE, SIZE, SIZE);
 
     float runtime;
     struct timeval start, end;
 
     gettimeofday(&start, NULL);
-    callKernel(args, A, B);
+    callKernel(A, B);
     gettimeofday(&end, NULL);
     runtime = ((end.tv_sec - start.tv_sec) * 1000.0) + ((end.tv_usec - start.tv_usec) / 1000.0);
     printf("Processing Time: %4.4f milliseconds\n", runtime);
-    if (args.debug) { print_data(B.elements, args.size, args.dimensions); }
+//    if (true) { print_data(B.elements, SIZE, DIMENSIONS); }
 }
