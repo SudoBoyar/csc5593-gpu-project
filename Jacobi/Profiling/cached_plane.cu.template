@@ -1,0 +1,286 @@
+
+#include <stdio.h>
+#include <iostream>
+#include <unistd.h>
+#include <sys/time.h>
+#include <sys/time.h>
+
+// Shorthand for formatting usage options
+#define fpe(msg) fprintf(stderr, "\t%s\n", msg);
+
+#define HANDLE_ERROR(err)  ( HandleError( err, __FILE__, __LINE__ ) )
+
+using namespace std;
+
+void HandleError(cudaError_t err, const char *file, int line) {
+    //
+    // Handle and report on CUDA errors.
+    //
+    if (err != cudaSuccess) {
+        printf("%s in %s at line %d\n", cudaGetErrorString(err), file, line);
+
+        exit(EXIT_FAILURE);
+    }
+}
+
+void checkCUDAError(const char *msg, bool exitOnError) {
+    //
+    // Check cuda error and print result if appropriate.
+    //
+    cudaError_t err = cudaGetLastError();
+
+    if (cudaSuccess != err) {
+        fprintf(stderr, "Cuda error: %s: %s.\n", msg, cudaGetErrorString(err));
+        if (exitOnError) {
+            exit(-1);
+        }
+    }
+}
+
+void cleanupCuda(void) {
+    //
+    // Clean up CUDA resources.
+    //
+
+    //
+    // Explicitly cleans up all runtime-related resources associated with the
+    // calling host thread.
+    //
+    HANDLE_ERROR(
+        cudaThreadExit()
+    );
+}
+
+struct Args {
+    bool debug;
+    bool sequential;
+    bool blocked;
+    bool overlapped;
+    // Data attributes
+    int size, dimensions, alloc_size, thread_dim;
+    int xSize, ySize, zSize;
+    int xBlockSize, yBlockSize, zBlockSize, tBlockSize;
+    // Run attributes
+    int grid_size, block_count, thread_count, iterations;
+};
+
+typedef struct {
+    int dimensions;
+    int height;
+    int width;
+    int depth;
+    float* elements;
+} Matrix;
+
+Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 1) {
+    Matrix data;
+
+    if (dimensions == 1 && width > 1) {
+        data.width = width;
+        data.height = 1;
+        data.depth = 1;
+        data.elements = (float *) malloc(width * sizeof(float));
+
+        data.elements[0] = 1.0;
+        data.elements[width - 1] = 1.0;
+    } else if (dimensions == 2 && width > 1 && height > 1) {
+        data.width = width;
+        data.height = height;
+        data.depth = 1;
+        data.elements = (float *) malloc(width * height * sizeof(float));
+
+        for (int y = 0; y < height; y += height - 1) {
+            for (int x = 0; x < width; x++) {
+                data.elements[y * width + x] = 1.0;
+            }
+        }
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x += width - 1) {
+                data.elements[y * width + x] = 1.0;
+            }
+        }
+    } else if (dimensions == 3 && width > 1 && height > 1 && depth > 1) {
+        data.width = width;
+        data.height = height;
+        data.depth = depth;
+        data.elements = (float *) malloc(width * height * depth * sizeof(float));
+
+        for (int z = 0; z < depth; z++) {
+            // X = 0 & N planes
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x += width - 1) {
+                    data.elements[z * width * height + y * width + x] = 1.0;
+                }
+            }
+
+            // Y = 0 & N planes
+            for (int y = 0; y < height; y += height - 1) {
+                for (int x = 0; x < width; x++) {
+                    data.elements[z * width * height + y * width + x] = 1.0;
+                }
+            }
+        }
+
+        // Z = 0 & N planes
+        for (int z = 0; z < depth; z += depth - 1) {
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    data.elements[z * width * height + y * width + x] = 1.0;
+                }
+            }
+        }
+    } else {
+        // Bad data
+    }
+
+    return data;
+}
+
+#define DIMENSIONS %%DIMENSIONS%%
+#define ITERATIONS %%ITERATIONS%%
+#define SIZE %%SIZE%%
+#define TILE_WIDTH %%TILE_WIDTH%%
+#define TILE_HEIGHT %%TILE_HEIGHT%%
+#define TILE_DEPTH %%TILE_DEPTH%%
+
+__global__ void cached_plane(Matrix data, Matrix result, int z_size) {
+    int threadDep = threadIdx.z;
+    int threadRow = threadIdx.y;
+    int threadCol = threadIdx.x;
+    int blockDep = blockIdx.z;
+    int blockRow = blockIdx.y;
+    int blockCol = blockIdx.x;
+
+    int x = blockCol * blockDim.x + threadCol;
+    int y = blockRow * blockDim.y + threadRow;
+	int z = blockDep * blockDim.z + threadDep;
+
+    int xySurface = data.width * data.height;
+    int yTemp = y * data.width;
+
+	int zTemp, index, xPrev, xNext, yPrev, yNext, zPrev, zNext; 
+
+	float newValue;
+    
+//	printf("z=%d, x+y+z = %d\n",x,y,z,x+y+z);
+    while(z < z_size){
+		zTemp = z * xySurface;
+		index = x + yTemp + zTemp; // x + y * data.width + z * data.width * data.height;
+		xPrev = (x - 1) + yTemp + zTemp; // (x-1) + y * data.width + z * data.width * data.height;
+		xNext = (x + 1) + yTemp + zTemp; // (x+1) + y * data.width + z * data.width * data.height;
+		yPrev = x + yTemp - data.width + zTemp; // x + (y-1) * data.width + z * data.width * data.height;
+		yNext = x + yTemp + data.width + zTemp; // x + (y+1) * data.width + z * data.width * data.height;
+		zPrev = x + yTemp + zTemp - xySurface; // x + y * data.width + (z-1) * data.width * data.height;
+		zNext = x + yTemp + zTemp + xySurface; // x + y * data.width + (z+1) * data.width * data.height;
+//		printf("x=%d, y=%d, z=%d, x+y+z = %d\n",x,y,z,x+y+z);
+		if (x > 0 && x < data.width - 1 && y > 0 && y < data.height - 1 && z > 0 && z < data.depth - 1) {
+			newValue =
+			(
+				data.elements[index] +
+				data.elements[xPrev] +
+				data.elements[xNext] +
+				data.elements[yPrev] +
+				data.elements[yNext] + 
+				data.elements[zPrev] +
+				data.elements[zNext]
+				) / 7;
+			__syncthreads();
+			result.elements[index] = newValue;
+//			printf("x+y+z = %d and result = %f\n",x+y+z,result.elements[index]);
+		} else {
+        // Edge or beyond, do not change.
+           __syncthreads();
+		}
+	//	printf("blockDim.x = %d, gridDim.x = %d\n",blockDim.x,gridDim.x);
+		z += 1;
+    }
+}
+
+void jacobi_naive(Args args, Matrix A, Matrix B) {
+    Matrix deviceA, deviceB;
+    deviceA.width = A.width;
+    deviceA.height = A.height;
+    deviceA.depth = A.depth;
+    deviceA.dimensions = A.dimensions;
+
+    deviceB.width = B.width;
+    deviceB.height = B.height;
+    deviceB.depth = B.depth;
+    deviceB.dimensions = B.dimensions;
+    
+    int threadx_dim = TILE_WIDTH;
+    int thready_dim = TILE_HEIGHT;
+	int blockx_dim = SIZE/threadx_dim;
+	int blocky_dim = SIZE/thready_dim;
+    size_t sizeA = A.width * A.height * A.depth * sizeof(float);
+    size_t sizeB = B.width * B.height * B.depth * sizeof(float);
+
+    cudaMalloc((void **) &deviceA.elements, sizeA);
+    cudaMalloc((void **) &deviceB.elements, sizeB);
+
+    cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceB.elements, B.elements, sizeB, cudaMemcpyHostToDevice);
+
+    int  z_size = SIZE;
+    dim3 blocks(blockx_dim, blocky_dim, 1);
+    dim3 threads( threadx_dim, thready_dim, 1);
+	for (int t = 0; t < ITERATIONS; t++) {
+//	   printf("deviceA.width = %d, deviceA.height = %d\n",deviceA.width,deviceA.height);
+	   cached_plane<<<blocks, threads>>>(deviceA, deviceB, z_size);
+	   swap(deviceA, deviceB);
+    }
+
+    cudaMemcpy(B.elements, deviceA.elements, sizeA, cudaMemcpyDeviceToHost);
+//	free(deviceA.elements);
+//	free(deviceB.elements);
+}
+
+void print_data(float *data, int size, int dimensions) {
+    if (size > 17) {
+        cerr << "Data too big to print\n" << endl;
+        return;
+    }
+
+    if (dimensions == 1) {
+        for (int x = 0; x < size; x++) {
+            printf("%.3f ", data[x]);
+        }
+    } else if (dimensions == 2) {
+        for (int y = 0; y < size; y++) {
+            for (int x = 0; x < size; x++) {
+                printf("%.3f ", data[y * size + x]);
+            }
+            cout << endl;
+        }
+    } else if (dimensions == 3) {
+        for (int z = 0; z < size; z++) {
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    printf("%.3f ", data[z * size * size + y * size + x]);
+                }
+                cout << endl;
+            }
+            cout << endl;
+        }
+    }
+    cout << endl << endl;
+}
+
+int main(int argc, char *argv[]) {
+    Args args = parse_arguments(argc, argv);
+    float runtime;
+    struct timeval start, end;
+    Matrix A, B;
+	printf("before initialize\n");
+    A = initialize_matrix(DIMENSIONS, SIZE, SIZE, SIZE);
+    B = initialize_matrix(DIMENSIONS, SIZE, SIZE, SIZE);
+
+    gettimeofday( &start, NULL ); 
+    jacobi_naive(args, A, B);
+    gettimeofday( &end, NULL ); 
+    runtime = ( ( end.tv_sec  - start.tv_sec ) * 1000.0 ) + ( ( end.tv_usec - start.tv_usec ) / 1000.0 );
+    printf( "Processing Time: %4.4f milliseconds\n", runtime );
+	if (args.debug) { print_data(B.elements, SIZE, DIMENSIONS); }
+	
+}
