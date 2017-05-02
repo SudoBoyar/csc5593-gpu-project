@@ -133,16 +133,17 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
  * CUDA KERNELS *
  ****************/
 
-#define DIMENSIONS 3 // %%DIMENSIONS%%
-#define ITERATIONS 1 // %%ITERATIONS%%
-#define SIZE 1 // %%SIZE%%
-#define TILE_WIDTH 4 // %%TILE_WIDTH%%
-#define TILE_HEIGHT 2 // %%TILE_HEIGHT%%
-#define TILE_DEPTH 2 // %%TILE_DEPTH%%
-#define TILE_AGE 2 // %%TILE_AGE%%
-#define PER_THREAD_X 2 // %%PER_THREAD_X%%
-#define PER_THREAD_Y 2 // %%PER_THREAD_X%%
-#define PER_THREAD_Z 2 // %%PER_THREAD_X%%
+#define DIMENSIONS %%DIMENSIONS%%
+#define ITERATIONS %%ITERATIONS%%
+#define SIZE %%SIZE%%
+#define TILE_WIDTH %%TILE_WIDTH%%
+#define TILE_HEIGHT %%TILE_HEIGHT%%
+#define TILE_DEPTH %%TILE_DEPTH%%
+#define TILE_AGE %%TILE_AGE%%
+#define PER_THREAD_X %%PER_THREAD_X%%
+#define PER_THREAD_Y %%PER_THREAD_X%%
+#define PER_THREAD_Z %%PER_THREAD_X%%
+
 #define BLOCK_DIM_X TILE_WIDTH/PER_THREAD_X
 #define BLOCK_DIM_Y TILE_HEIGHT/PER_THREAD_Y
 #define BLOCK_DIM_Z TILE_DEPTH/PER_THREAD_Z
@@ -164,7 +165,10 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
     int sharedX[PER_THREAD_COMBINED_ITERATIONS_X];
 
     // Shared and local data arrays
-    __shared__ float shared[TILE_AGE + 1][(TILE_AGE + TILE_WIDTH + TILE_AGE)];
+    __shared__ float shared[2][(TILE_AGE + TILE_WIDTH + TILE_AGE)];
+    int sharedXMax = TILE_AGE + TILE_WIDTH + TILE_AGE - 1;
+    int tCurr = 0;
+    int tPrev = 1;
 
     // Some useful bits of info
     int globalBlockStart = blockCol * TILE_WIDTH;
@@ -176,21 +180,42 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
     // Indexes in overlapped region left of the block
 #pragma unroll
     for (int x = 0; x < PER_THREAD_OVERLAPPED_COUNT_X; x++) {
-        sharedX[x] = TILE_AGE + threadCol - (PER_THREAD_OVERLAPPED_COUNT_X - x) * BLOCK_DIM_X;
-        globalX[x] = globalBlockStart + sharedX[x] - TILE_AGE;
+        int sharX = TILE_AGE + threadCol - (PER_THREAD_OVERLAPPED_COUNT_X - x) * BLOCK_DIM_X;
+        int globX = globalBlockStart + sharX - TILE_AGE;
+        if (sharX < 0 || sharX > sharedXMax || globX < 0 || globX > data.width - 1) {
+            sharedX[x] = -1;
+            globalX[x] = -1;
+        } else {
+            sharedX[x] = sharX;
+            globalX[x] = globX;
+        }
     }
 
 #pragma unroll
     for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
         // Locations inside the block
-        sharedX[x] = TILE_AGE + threadCol + BLOCK_DIM_X * (x - PER_THREAD_OVERLAPPED_COUNT_X);
-        globalX[x] = globalBlockStart + sharedX[x] - TILE_AGE;
+        int sharX = TILE_AGE + threadCol + BLOCK_DIM_X * (x - PER_THREAD_OVERLAPPED_COUNT_X);
+        int globX = globalBlockStart + sharX - TILE_AGE;
+        if (sharX < 0 || sharX > sharedXMax || globX < 0 || globX > data.width - 1) {
+            sharedX[x] = -1;
+            globalX[x] = -1;
+        } else {
+            sharedX[x] = sharX;
+            globalX[x] = globX;
+        }
     }
 
 #pragma unroll
     for (int x = PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X; x++) {
-        sharedX[x] = TILE_AGE + TILE_WIDTH + threadCol + BLOCK_DIM_X * (x - (PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X));
-        globalX[x] = globalBlockStart + sharedX[x] - TILE_AGE;
+        int sharX = TILE_AGE + TILE_WIDTH + threadCol + BLOCK_DIM_X * (x - (PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X));
+        int globX = globalBlockStart + sharX - TILE_AGE;
+        if (sharX < 0 || sharX > sharedXMax || globX < 0 || globX > data.width - 1) {
+            sharedX[x] = -1;
+            globalX[x] = -1;
+        } else {
+            sharedX[x] = sharX;
+            globalX[x] = globX;
+        }
     }
 
     __syncthreads();
@@ -253,6 +278,9 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
      */
 #pragma unroll
     for (int t = 1; t <= TILE_AGE; t++) {
+        int tmp = tCurr;
+        tCurr = tPrev;
+        tPrev = tmp;
         __syncthreads();
 
         int iterationCalculateStart = max(globalBlockStart - TILE_AGE + t - 1, 0);
@@ -265,9 +293,9 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
             int sharX = sharedX[x];
 
             if (globX > iterationCalculateStart && globX < iterationCalculateEnd) {
-                shared[t][sharX] = (shared[t-1][sharX] + shared[t-1][sharX - 1] + shared[t-1][sharX + 1]) / 3;
-            } else {
-                shared[t][sharX] = shared[t-1][sharX];
+                shared[tCurr][sharX] = (shared[tPrev][sharX] + shared[tPrev][sharX - 1] + shared[tPrev][sharX + 1]) / 3;
+            } else if (sharX >= 0){
+                shared[tCurr][sharX] = shared[tPrev][sharX];
             }
         }
 
@@ -278,9 +306,9 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
             int sharX = sharedX[x];
 
             if (globX > iterationCalculateStart && globX < iterationCalculateEnd) {
-                shared[t][sharX] = (shared[t-1][sharX - 1] + shared[t-1][sharX] + shared[t-1][sharX + 1]) / 3;
-            } else {
-                shared[t][sharX] = shared[t-1][sharX];
+                shared[tCurr][sharX] = (shared[tPrev][sharX - 1] + shared[tPrev][sharX] + shared[tPrev][sharX + 1]) / 3;
+            } else if (sharX >= 0){
+                shared[tCurr][sharX] = shared[tPrev][sharX];
             }
         }
 
@@ -291,9 +319,9 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
             int sharX = sharedX[x];
 
             if (globX > iterationCalculateStart && globX < iterationCalculateEnd) {
-                shared[t][sharX] = (shared[t-1][sharX - 1] + shared[t-1][sharX] + shared[t-1][sharX + 1]) / 3;
-            } else {
-                shared[t][sharX] = shared[t-1][sharX];
+                shared[tCurr][sharX] = (shared[tPrev][sharX - 1] + shared[tPrev][sharX] + shared[tPrev][sharX + 1]) / 3;
+            } else if (sharX >= 0){
+                shared[tCurr][sharX] = shared[tPrev][sharX];
             }
         }
     }
@@ -302,7 +330,7 @@ __global__ void jacobi1d(Matrix data, Matrix result) {
 
 #pragma unroll
     for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
-        result.elements[globalX[x]] = shared[TILE_AGE][sharedX[x]];
+        result.elements[globalX[x]] = shared[tCurr][sharedX[x]];
     }
 }
 
@@ -320,7 +348,11 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     int sharedY[PER_THREAD_COMBINED_ITERATIONS_Y];
 
     // Shared and local data arrays
-    __shared__ float shared[TILE_AGE + 1][TILE_AGE + TILE_HEIGHT + TILE_AGE][TILE_AGE + TILE_WIDTH + TILE_AGE];
+    __shared__ float shared[2][TILE_AGE + TILE_HEIGHT + TILE_AGE][TILE_AGE + TILE_WIDTH + TILE_AGE];
+    int sharedXMax = TILE_AGE + TILE_WIDTH + TILE_AGE - 1;
+    int sharedYMax = TILE_AGE + TILE_HEIGHT + TILE_AGE - 1;
+    int tCurr = 0;
+    int tPrev = 1;
 
     // Some useful bits of info
     int globalBlockStartX = blockCol * TILE_WIDTH;
@@ -341,23 +373,42 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     // Overlapped region to the left of the block
 #pragma unroll
     for (int x = 0; x < PER_THREAD_OVERLAPPED_COUNT_X; x++) {
-        // Offset by TILE_AGE to make sure it's within the range since we're going back by TILE_AGE
-        sharedX[x] = TILE_AGE + threadCol - (PER_THREAD_OVERLAPPED_COUNT_X - x) * BLOCK_DIM_X;
-        globalX[x] = globalBlockStartX + sharedX[x] - TILE_AGE;
+        int sharX = TILE_AGE + threadCol - (PER_THREAD_OVERLAPPED_COUNT_X - x) * BLOCK_DIM_X;
+        int globX = globalBlockStartX + sharX - TILE_AGE;
+        if (sharX < 0 || sharX > sharedXMax || globX < 0 || globX > data.width - 1) {
+            sharedX[x] = -1;
+            globalX[x] = -1;
+        } else {
+            sharedX[x] = sharX;
+            globalX[x] = globX;
+        }
     }
 
-    // Main block
 #pragma unroll
     for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
-        sharedX[x] = TILE_AGE + threadCol + BLOCK_DIM_X * (x - PER_THREAD_OVERLAPPED_COUNT_X);
-        globalX[x] = globalBlockStartX + sharedX[x] - TILE_AGE;
+        // Locations inside the block
+        int sharX = TILE_AGE + threadCol + BLOCK_DIM_X * (x - PER_THREAD_OVERLAPPED_COUNT_X);
+        int globX = globalBlockStartX + sharX - TILE_AGE;
+        if (sharX < 0 || sharX > sharedXMax || globX < 0 || globX > data.width - 1) {
+            sharedX[x] = -1;
+            globalX[x] = -1;
+        } else {
+            sharedX[x] = sharX;
+            globalX[x] = globX;
+        }
     }
 
-    // Right of block
 #pragma unroll
     for (int x = PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X; x++) {
-        sharedX[x] = TILE_AGE + TILE_WIDTH + threadCol + BLOCK_DIM_X * (x - (PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X));
-        globalX[x] = globalBlockStartX + sharedX[x] - TILE_AGE;
+        int sharX = TILE_AGE + TILE_WIDTH + threadCol + BLOCK_DIM_X * (x - (PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X));
+        int globX = globalBlockStartX + sharX - TILE_AGE;
+        if (sharX < 0 || sharX > sharedXMax || globX < 0 || globX > data.width - 1) {
+            sharedX[x] = -1;
+            globalX[x] = -1;
+        } else {
+            sharedX[x] = sharX;
+            globalX[x] = globX;
+        }
     }
 
     // Y Indexes
@@ -366,23 +417,43 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
 #pragma unroll
     for (int y = 0; y < PER_THREAD_OVERLAPPED_COUNT_Y; y++) {
         // Offset by TILE_AGE to make sure it's within the range since we're going back by TILE_AGE
-        sharedY[y] = TILE_AGE + threadRow - (PER_THREAD_OVERLAPPED_COUNT_Y - y) * BLOCK_DIM_Y;
-        // Remove the offset for the global index
-        globalY[y] = globalBlockStartY + sharedY[y] - TILE_AGE;
+        int sharY = TILE_AGE + threadRow - (PER_THREAD_OVERLAPPED_COUNT_Y - y) * BLOCK_DIM_Y;
+        int globY = globalBlockStartY + sharY - TILE_AGE;
+        if (sharY < 0 || sharY > sharedYMax || globY < 0 || globY > data.height - 1) {
+            sharedY[y] = -1;
+            globalY[y] = -1;
+        } else {
+            sharedY[y] = sharY;
+            globalY[y] = globY;
+        }
     }
 
     // Main block
 #pragma unroll
     for (int y = PER_THREAD_OVERLAPPED_COUNT_Y; y < PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y; y++) {
-        sharedY[y] = TILE_AGE + threadRow + BLOCK_DIM_Y * (y - PER_THREAD_OVERLAPPED_COUNT_Y);
-        globalY[y] = globalBlockStartY + sharedY[y] - TILE_AGE;
+        int sharY = TILE_AGE + threadRow + BLOCK_DIM_Y * (y - PER_THREAD_OVERLAPPED_COUNT_Y);
+        int globY = globalBlockStartY + sharY - TILE_AGE;
+        if (sharY < 0 || sharY > sharedYMax || globY < 0 || globY > data.height - 1) {
+            sharedY[y] = -1;
+            globalY[y] = -1;
+        } else {
+            sharedY[y] = sharY;
+            globalY[y] = globY;
+        }
     }
 
     // Above block
 #pragma unroll
     for (int y = PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y; y < PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y + PER_THREAD_OVERLAPPED_COUNT_Y; y++) {
-        sharedY[y] = TILE_AGE + TILE_HEIGHT + threadRow + BLOCK_DIM_Y * (y - (PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y));
-        globalY[y] = globalBlockStartY + sharedY[y] - TILE_AGE;
+        int sharY = TILE_AGE + TILE_HEIGHT + threadRow + BLOCK_DIM_Y * (y - (PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y));
+        int globY = globalBlockStartY + sharY - TILE_AGE;
+        if (sharY < 0 || sharY > sharedYMax || globY < 0 || globY > data.height - 1) {
+            sharedY[y] = -1;
+            globalY[y] = -1;
+        } else {
+            sharedY[y] = sharY;
+            globalY[y] = globY;
+        }
     }
 
     // Global absolute index
@@ -426,6 +497,10 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
     // TODO Brevity and clarity might be better than this mismatched thing after all
 #pragma unroll
     for (int t = 1; t <= TILE_AGE; t++) {
+        int tmp = tCurr;
+        tCurr = tPrev;
+        tPrev = tmp;
+
         __syncthreads();
 
         int calculateStartX = max(globalBlockStartX - TILE_AGE + t - 1, 0);
@@ -444,18 +519,19 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
                 int globX = globalX[x];
                 int sharX = sharedX[x];
 
-                if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
+                if (globX > calculateStartX && globX < calculateEndX &&
+                    globY > calculateStartY && globY < calculateEndY) {
                     // Calculate new value
-                    shared[t][sharY][sharX] =
+                    shared[tCurr][sharY][sharX] =
                         (
-                            shared[t-1][sharY][sharX - 1] +
-                            shared[t-1][sharY][sharX] +
-                            shared[t-1][sharY][sharX + 1] +
-                            shared[t-1][sharY - 1][sharX] +
-                            shared[t-1][sharY + 1][sharX]
+                            shared[tPrev][sharY][sharX - 1] +
+                            shared[tPrev][sharY][sharX] +
+                            shared[tPrev][sharY][sharX + 1] +
+                            shared[tPrev][sharY - 1][sharX] +
+                            shared[tPrev][sharY + 1][sharX]
                         ) * 0.2f;
-                } else {
-                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                } else if (sharX >= 0 && sharY >=0){
+                    shared[tCurr][sharY][sharX] = shared[tPrev][sharY][sharX];
                 }
             }
 
@@ -466,16 +542,16 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
                 int sharX = sharedX[x];
 
                 if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
-                    shared[t][sharY][sharX] =
+                    shared[tCurr][sharY][sharX] =
                         (
-                            shared[t-1][sharY][sharX - 1] +
-                            shared[t-1][sharY][sharX] +
-                            shared[t-1][sharY][sharX + 1] +
-                            shared[t-1][sharY - 1][sharX] +
-                            shared[t-1][sharY + 1][sharX]
+                            shared[tPrev][sharY][sharX - 1] +
+                            shared[tPrev][sharY][sharX] +
+                            shared[tPrev][sharY][sharX + 1] +
+                            shared[tPrev][sharY - 1][sharX] +
+                            shared[tPrev][sharY + 1][sharX]
                         ) * 0.2f;
-                } else {
-                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                } else if (sharX >= 0 && sharY >=0){
+                    shared[tCurr][sharY][sharX] = shared[tPrev][sharY][sharX];
                 }
             }
 
@@ -486,16 +562,16 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
                 int sharX = sharedX[x];
 
                 if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
-                    shared[t][sharY][sharX] =
+                    shared[tCurr][sharY][sharX] =
                         (
-                            shared[t-1][sharY][sharX - 1] +
-                            shared[t-1][sharY][sharX] +
-                            shared[t-1][sharY][sharX + 1] +
-                            shared[t-1][sharY - 1][sharX] +
-                            shared[t-1][sharY + 1][sharX]
+                            shared[tPrev][sharY][sharX - 1] +
+                            shared[tPrev][sharY][sharX] +
+                            shared[tPrev][sharY][sharX + 1] +
+                            shared[tPrev][sharY - 1][sharX] +
+                            shared[tPrev][sharY + 1][sharX]
                         ) * 0.2f;
-                } else {
-                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                } else if (sharX >= 0 && sharY >=0){
+                    shared[tCurr][sharY][sharX] = shared[tPrev][sharY][sharX];
                 }
             }
         }
@@ -512,16 +588,16 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
 
                 if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
                     // Calculate new value
-                    shared[t][sharY][sharX] =
+                    shared[tCurr][sharY][sharX] =
                         (
-                            shared[t-1][sharY][sharX - 1] +
-                            shared[t-1][sharY][sharX] +
-                            shared[t-1][sharY][sharX + 1] +
-                            shared[t-1][sharY - 1][sharX] +
-                            shared[t-1][sharY + 1][sharX]
+                            shared[tPrev][sharY][sharX - 1] +
+                            shared[tPrev][sharY][sharX] +
+                            shared[tPrev][sharY][sharX + 1] +
+                            shared[tPrev][sharY - 1][sharX] +
+                            shared[tPrev][sharY + 1][sharX]
                         ) * 0.2f;
-                } else {
-                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                } else if (sharX >= 0 && sharY >=0){
+                    shared[tCurr][sharY][sharX] = shared[tPrev][sharY][sharX];
                 }
             }
 
@@ -532,16 +608,16 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
                 int sharX = sharedX[x];
 
                 if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
-                    shared[t][sharY][sharX] =
+                    shared[tCurr][sharY][sharX] =
                         (
-                            shared[t-1][sharY][sharX - 1] +
-                            shared[t-1][sharY][sharX] +
-                            shared[t-1][sharY][sharX + 1] +
-                            shared[t-1][sharY - 1][sharX] +
-                            shared[t-1][sharY + 1][sharX]
+                            shared[tPrev][sharY][sharX - 1] +
+                            shared[tPrev][sharY][sharX] +
+                            shared[tPrev][sharY][sharX + 1] +
+                            shared[tPrev][sharY - 1][sharX] +
+                            shared[tPrev][sharY + 1][sharX]
                         ) * 0.2f;
-                } else {
-                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                } else if (sharX >= 0 && sharY >=0){
+                    shared[tCurr][sharY][sharX] = shared[tPrev][sharY][sharX];
                 }
             }
 
@@ -552,16 +628,16 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
                 int sharX = sharedX[x];
 
                 if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
-                    shared[t][sharY][sharX] =
+                    shared[tCurr][sharY][sharX] =
                         (
-                            shared[t-1][sharY][sharX - 1] +
-                            shared[t-1][sharY][sharX] +
-                            shared[t-1][sharY][sharX + 1] +
-                            shared[t-1][sharY - 1][sharX] +
-                            shared[t-1][sharY + 1][sharX]
+                            shared[tPrev][sharY][sharX - 1] +
+                            shared[tPrev][sharY][sharX] +
+                            shared[tPrev][sharY][sharX + 1] +
+                            shared[tPrev][sharY - 1][sharX] +
+                            shared[tPrev][sharY + 1][sharX]
                         ) * 0.2f;
-                } else {
-                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                } else if (sharX >= 0 && sharY >=0){
+                    shared[tCurr][sharY][sharX] = shared[tPrev][sharY][sharX];
                 }
             }
         }
@@ -579,16 +655,16 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
 
                 if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
                     // Calculate new value
-                    shared[t][sharY][sharX] =
+                    shared[tCurr][sharY][sharX] =
                         (
-                            shared[t-1][sharY][sharX - 1] +
-                            shared[t-1][sharY][sharX] +
-                            shared[t-1][sharY][sharX + 1] +
-                            shared[t-1][sharY - 1][sharX] +
-                            shared[t-1][sharY + 1][sharX]
+                            shared[tPrev][sharY][sharX - 1] +
+                            shared[tPrev][sharY][sharX] +
+                            shared[tPrev][sharY][sharX + 1] +
+                            shared[tPrev][sharY - 1][sharX] +
+                            shared[tPrev][sharY + 1][sharX]
                         ) * 0.2f;
-                } else {
-                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                } else if (sharX >= 0 && sharY >=0){
+                    shared[tCurr][sharY][sharX] = shared[tPrev][sharY][sharX];
                 }
             }
 
@@ -599,16 +675,16 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
                 int sharX = sharedX[x];
 
                 if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
-                    shared[t][sharY][sharX] =
+                    shared[tCurr][sharY][sharX] =
                         (
-                            shared[t-1][sharY][sharX - 1] +
-                            shared[t-1][sharY][sharX] +
-                            shared[t-1][sharY][sharX + 1] +
-                            shared[t-1][sharY - 1][sharX] +
-                            shared[t-1][sharY + 1][sharX]
+                            shared[tPrev][sharY][sharX - 1] +
+                            shared[tPrev][sharY][sharX] +
+                            shared[tPrev][sharY][sharX + 1] +
+                            shared[tPrev][sharY - 1][sharX] +
+                            shared[tPrev][sharY + 1][sharX]
                         ) * 0.2f;
-                } else {
-                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                } else if (sharX >= 0 && sharY >=0){
+                    shared[tCurr][sharY][sharX] = shared[tPrev][sharY][sharX];
                 }
             }
 
@@ -619,16 +695,16 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
                 int sharX = sharedX[x];
 
                 if (globX > calculateStartX && globX < calculateEndX && globY > calculateStartY && globY < calculateEndY) {
-                    shared[t][sharY][sharX] =
+                    shared[tCurr][sharY][sharX] =
                         (
-                            shared[t-1][sharY][sharX - 1] +
-                            shared[t-1][sharY][sharX] +
-                            shared[t-1][sharY][sharX + 1] +
-                            shared[t-1][sharY - 1][sharX] +
-                            shared[t-1][sharY + 1][sharX]
+                            shared[tPrev][sharY][sharX - 1] +
+                            shared[tPrev][sharY][sharX] +
+                            shared[tPrev][sharY][sharX + 1] +
+                            shared[tPrev][sharY - 1][sharX] +
+                            shared[tPrev][sharY + 1][sharX]
                         ) * 0.2f;
-                } else {
-                    shared[t][sharY][sharX] = shared[t-1][sharY][sharX];
+                } else if (sharX >= 0 && sharY >=0){
+                    shared[tCurr][sharY][sharX] = shared[tPrev][sharY][sharX];
                 }
             }
         }
@@ -646,7 +722,7 @@ __global__ void jacobi2d(Matrix data, Matrix result) {
             int globX = globalX[x];
 
             if (globX >= 0 && globX < data.width && globY >= 0 && globY < data.height) {
-                result.elements[globalIndex[y][x]] = shared[TILE_AGE][sharY][sharX];
+                result.elements[globalIndex[y][x]] = shared[tCurr][sharY][sharX];
             }
         }
     }
@@ -670,7 +746,12 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
     int sharedZ[PER_THREAD_COMBINED_ITERATIONS_Z];
 
     // Shared and local data arrays
-    __shared__ float shared[TILE_AGE + 1][TILE_AGE + TILE_DEPTH + TILE_AGE][TILE_AGE + TILE_HEIGHT + TILE_AGE][TILE_AGE + TILE_WIDTH + TILE_AGE];
+    __shared__ float shared[2][TILE_AGE + TILE_DEPTH + TILE_AGE][TILE_AGE + TILE_HEIGHT + TILE_AGE][TILE_AGE + TILE_WIDTH + TILE_AGE];
+    int sharedXMax = TILE_AGE + TILE_WIDTH + TILE_AGE - 1;
+    int sharedYMax = TILE_AGE + TILE_HEIGHT + TILE_AGE - 1;
+    int sharedZMax = TILE_AGE + TILE_DEPTH + TILE_AGE - 1;
+    int tCurr = 0;
+    int tPrev = 1;
 
     // Some useful bits of info
     int globalBlockStartX = blockCol * TILE_WIDTH;
@@ -692,23 +773,42 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
     // Overlapped region to the left of the block
 #pragma unroll
     for (int x = 0; x < PER_THREAD_OVERLAPPED_COUNT_X; x++) {
-        // Offset by TILE_AGE to make sure it's within the range since we're going back by TILE_AGE
-        sharedX[x] = TILE_AGE + threadCol - (PER_THREAD_OVERLAPPED_COUNT_X - x) * BLOCK_DIM_X;
-        globalX[x] = globalBlockStartX + sharedX[x] - TILE_AGE;
+        int sharX = TILE_AGE + threadCol - (PER_THREAD_OVERLAPPED_COUNT_X - x) * BLOCK_DIM_X;
+        int globX = globalBlockStartX + sharX - TILE_AGE;
+        if (sharX < 0 || sharX > sharedXMax || globX < 0 || globX > data.width - 1) {
+            sharedX[x] = -1;
+            globalX[x] = -1;
+        } else {
+            sharedX[x] = sharX;
+            globalX[x] = globX;
+        }
     }
 
-    // Main block
 #pragma unroll
     for (int x = PER_THREAD_OVERLAPPED_COUNT_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x++) {
-        sharedX[x] = TILE_AGE + threadCol + BLOCK_DIM_X * (x - PER_THREAD_OVERLAPPED_COUNT_X);
-        globalX[x] = globalBlockStartX + sharedX[x] - TILE_AGE;
+        // Locations inside the block
+        int sharX = TILE_AGE + threadCol + BLOCK_DIM_X * (x - PER_THREAD_OVERLAPPED_COUNT_X);
+        int globX = globalBlockStartX + sharX - TILE_AGE;
+        if (sharX < 0 || sharX > sharedXMax || globX < 0 || globX > data.width - 1) {
+            sharedX[x] = -1;
+            globalX[x] = -1;
+        } else {
+            sharedX[x] = sharX;
+            globalX[x] = globX;
+        }
     }
 
-    // Right of block
 #pragma unroll
     for (int x = PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X; x < PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X + PER_THREAD_OVERLAPPED_COUNT_X; x++) {
-        sharedX[x] = TILE_AGE + TILE_WIDTH + threadCol + BLOCK_DIM_X * (x - (PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X));
-        globalX[x] = globalBlockStartX + sharedX[x] - TILE_AGE;
+        int sharX = TILE_AGE + TILE_WIDTH + threadCol + BLOCK_DIM_X * (x - (PER_THREAD_OVERLAPPED_COUNT_X + PER_THREAD_X));
+        int globX = globalBlockStartX + sharX - TILE_AGE;
+        if (sharX < 0 || sharX > sharedXMax || globX < 0 || globX > data.width - 1) {
+            sharedX[x] = -1;
+            globalX[x] = -1;
+        } else {
+            sharedX[x] = sharX;
+            globalX[x] = globX;
+        }
     }
 
     // Y Indexes
@@ -717,23 +817,43 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
 #pragma unroll
     for (int y = 0; y < PER_THREAD_OVERLAPPED_COUNT_Y; y++) {
         // Offset by TILE_AGE to make sure it's within the range since we're going back by TILE_AGE
-        sharedY[y] = TILE_AGE + threadRow - (PER_THREAD_OVERLAPPED_COUNT_Y - y) * BLOCK_DIM_Y;
-        // Remove the offset for the global index
-        globalY[y] = globalBlockStartY + sharedY[y] - TILE_AGE;
+        int sharY = TILE_AGE + threadRow - (PER_THREAD_OVERLAPPED_COUNT_Y - y) * BLOCK_DIM_Y;
+        int globY = globalBlockStartY + sharY - TILE_AGE;
+        if (sharY < 0 || sharY > sharedYMax || globY < 0 || globY > data.height - 1) {
+            sharedY[y] = -1;
+            globalY[y] = -1;
+        } else {
+            sharedY[y] = sharY;
+            globalY[y] = globY;
+        }
     }
 
     // Main block
 #pragma unroll
     for (int y = PER_THREAD_OVERLAPPED_COUNT_Y; y < PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y; y++) {
-        sharedY[y] = TILE_AGE + threadRow + BLOCK_DIM_Y * (y - PER_THREAD_OVERLAPPED_COUNT_Y);
-        globalY[y] = globalBlockStartY + sharedY[y] - TILE_AGE;
+        int sharY = TILE_AGE + threadRow + BLOCK_DIM_Y * (y - PER_THREAD_OVERLAPPED_COUNT_Y);
+        int globY = globalBlockStartY + sharY - TILE_AGE;
+        if (sharY < 0 || sharY > sharedYMax || globY < 0 || globY > data.height - 1) {
+            sharedY[y] = -1;
+            globalY[y] = -1;
+        } else {
+            sharedY[y] = sharY;
+            globalY[y] = globY;
+        }
     }
 
     // Above block
 #pragma unroll
     for (int y = PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y; y < PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y + PER_THREAD_OVERLAPPED_COUNT_Y; y++) {
-        sharedY[y] = TILE_AGE + TILE_HEIGHT + threadRow + BLOCK_DIM_Y * (y - (PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y));
-        globalY[y] = globalBlockStartY + sharedY[y] - TILE_AGE;
+        int sharY = TILE_AGE + TILE_HEIGHT + threadRow + BLOCK_DIM_Y * (y - (PER_THREAD_OVERLAPPED_COUNT_Y + PER_THREAD_Y));
+        int globY = globalBlockStartY + sharY - TILE_AGE;
+        if (sharY < 0 || sharY > sharedYMax || globY < 0 || globY > data.height - 1) {
+            sharedY[y] = -1;
+            globalY[y] = -1;
+        } else {
+            sharedY[y] = sharY;
+            globalY[y] = globY;
+        }
     }
 
     // Z Indexes
@@ -742,23 +862,44 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
 #pragma unroll
     for (int z = 0; z < PER_THREAD_OVERLAPPED_COUNT_Z; z++) {
         // Offset by TILE_AGE to make sure it's within the range since we're going back by TILE_AGE
-        sharedZ[z] = TILE_AGE + threadDep - (PER_THREAD_OVERLAPPED_COUNT_Z - z) * BLOCK_DIM_Z;
+        int sharZ = TILE_AGE + threadDep - (PER_THREAD_OVERLAPPED_COUNT_Z - z) * BLOCK_DIM_Z;
         // Remove the offset for the global index
-        globalZ[z] = globalBlockStartZ + sharedZ[z] - TILE_AGE;
+        int globZ = globalBlockStartZ + sharZ - TILE_AGE;
+        if (sharZ < 0 || sharZ > sharedZMax || globZ < 0 || globZ > data.depth - 1) {
+            sharedZ[z] = -1;
+            globalZ[z] = -1;
+        } else {
+            sharedZ[z] = sharZ;
+            globalZ[z] = globZ;
+        }
     }
 
     // Main block
 #pragma unroll
     for (int z = PER_THREAD_OVERLAPPED_COUNT_Z; z < PER_THREAD_OVERLAPPED_COUNT_Z + PER_THREAD_Z; z++) {
-        sharedZ[z] = TILE_AGE + threadDep + BLOCK_DIM_Z * (z - PER_THREAD_OVERLAPPED_COUNT_Z);
-        globalZ[z] = globalBlockStartZ + sharedZ[z] - TILE_AGE;
+        int sharZ = TILE_AGE + threadDep + BLOCK_DIM_Z * (z - PER_THREAD_OVERLAPPED_COUNT_Z);
+        int globZ = globalBlockStartZ + sharZ - TILE_AGE;
+        if (sharZ < 0 || sharZ > sharedZMax || globZ < 0 || globZ > data.depth - 1) {
+            sharedZ[z] = -1;
+            globalZ[z] = -1;
+        } else {
+            sharedZ[z] = sharZ;
+            globalZ[z] = globZ;
+        }
     }
 
-    // Above block
+    // Overlapped region behind block
 #pragma unroll
     for (int z = PER_THREAD_OVERLAPPED_COUNT_Z + PER_THREAD_Z; z < PER_THREAD_OVERLAPPED_COUNT_Z + PER_THREAD_Z + PER_THREAD_OVERLAPPED_COUNT_Z; z++) {
-        sharedZ[z] = TILE_AGE + TILE_DEPTH + threadDep + BLOCK_DIM_Z * (z - (PER_THREAD_OVERLAPPED_COUNT_Z + PER_THREAD_Z));
-        globalZ[z] = globalBlockStartZ + sharedZ[z] - TILE_AGE;
+        int sharZ = TILE_AGE + TILE_DEPTH + threadDep + BLOCK_DIM_Z * (z - (PER_THREAD_OVERLAPPED_COUNT_Z + PER_THREAD_Z));
+        int globZ = globalBlockStartZ + sharZ - TILE_AGE;
+        if (sharZ < 0 || sharZ > sharedZMax || globZ < 0 || globZ > data.depth - 1) {
+            sharedZ[z] = -1;
+            globalZ[z] = -1;
+        } else {
+            sharedZ[z] = sharZ;
+            globalZ[z] = globZ;
+        }
     }
 
     // Global absolute index
@@ -771,14 +912,6 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
 #pragma unroll
             for (int x = 0; x < PER_THREAD_COMBINED_ITERATIONS_X; x++) {
                 globalIndex[z][y][x] = globalX[x] + yTemp + zTemp;
-            }
-        }
-    }
-
-    for (int z = 0; z < PER_THREAD_Z; z++) {
-        for (int y = 0; y < PER_THREAD_Y; y++) {
-            for (int x = 0; x < PER_THREAD_X; x++) {
-                printf("Block(%d, %d, %d) Thread(%d, %d, %d) Iter(%d, %d, %d) Shared(%d, %d, %d) Global(%d, %d, %d) GI(%d)\n", blockCol, blockRow, blockDep, threadCol, threadRow, threadDep, z, y, x, sharedX[x], sharedY[y], sharedZ[z], globalX[x], globalY[y], globalZ[z], globalIndex[z][y][x]);
             }
         }
     }
@@ -803,6 +936,10 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
 
 #pragma unroll
     for (int t = 1; t <= TILE_AGE; t++) {
+        int tmp = tCurr;
+        tCurr = tPrev;
+        tPrev = tmp;
+
         __syncthreads();
 
         int calculateStartX = max(globalBlockStartX - TILE_AGE + t - 1, 0);
@@ -829,18 +966,18 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
                         globY > calculateStartY && globY < calculateEndY &&
                         globZ > calculateStartZ && globZ < calculateEndZ) {
 
-                        shared[t][sharZ][sharY][sharX] =
+                        shared[tCurr][sharZ][sharY][sharX] =
                             (
-                                shared[t-1][sharZ][sharY][sharX] +
-                                shared[t-1][sharZ][sharY][sharX - 1] +
-                                shared[t-1][sharZ][sharY][sharX + 1] +
-                                shared[t-1][sharZ][sharY - 1][sharX] +
-                                shared[t-1][sharZ][sharY + 1][sharX] +
-                                shared[t-1][sharZ - 1][sharY][sharX] +
-                                shared[t-1][sharZ + 1][sharY][sharX]
+                                shared[tPrev][sharZ][sharY][sharX] +
+                                shared[tPrev][sharZ][sharY][sharX - 1] +
+                                shared[tPrev][sharZ][sharY][sharX + 1] +
+                                shared[tPrev][sharZ][sharY - 1][sharX] +
+                                shared[tPrev][sharZ][sharY + 1][sharX] +
+                                shared[tPrev][sharZ - 1][sharY][sharX] +
+                                shared[tPrev][sharZ + 1][sharY][sharX]
                             ) / 7;
-                    } else {
-                        shared[t][sharZ][sharY][sharX] = shared[t-1][sharZ][sharY][sharX];
+                    } else if (sharX >= 0 && sharY >= 0 && sharZ >= 0) {
+                        shared[tCurr][sharZ][sharY][sharX] = shared[tPrev][sharZ][sharY][sharX];
                     }
                 }
             }
@@ -862,10 +999,8 @@ __global__ void jacobi3d(Matrix data, Matrix result) {
                 int sharX = sharedX[x];
                 int globX = globalX[x];
 
-                if (globX >= 0 && globX < data.width &&
-                    globY >= 0 && globY < data.height &&
-                    globZ >= 0 && globZ < data.depth) {
-                    result.elements[globalIndex[z][y][x]] = shared[TILE_AGE][sharZ][sharY][sharX];
+                if (globX >= 0 && globY >= 0 && globZ >= 0) {
+                    result.elements[globalIndex[z][y][x]] = shared[tCurr][sharZ][sharY][sharX];
                 }
             }
         }
