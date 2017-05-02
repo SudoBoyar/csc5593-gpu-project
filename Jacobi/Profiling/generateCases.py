@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 
 from cases import cases
@@ -13,53 +14,117 @@ all: $(BINARIES)
 
 heraclesMakefileCaseTemplate = """
 {name}: {file}
-	ssh node18 nvcc -std=c++11 {file} -o {outFile}
+	ssh node18 nvcc {file} -o {outFile}
 """
 
-if __name__ == '__main__':
-    if len(sys.argv >= 1):
+def usage():
+    print "python generateCases.py [option] [setIndex [setIndex...]]"
+    print "\tOptions:"
+    print "\t\thelp         print this message"
+    print "\t\tclean        remove the generated directory"
+    print "\t\theracles     build for heracles"
+    print "\t\tdozer        build for dozer"
+    print "\t\thydra        build for hydra"
+    print "\n"
+    print "\tExample:"
+    print "\t\tTo generate full suite on heracles"
+    print "\t\t$ python generateCases.py heracles"
+    print "\t\tOr to only generate the 1st and 3rd sets"
+    print "\t\t$ python generateCases.py heracles 1 3"
+
+def baseDirectory():
+    return os.path.dirname(os.path.realpath(__file__))
+
+def generatedDirectory():
+    return os.path.join(baseDirectory(), 'generated')
+
+def writeFileWithReplacements(replaceCases, templateFile, targetFile):
+    with open(templateFile, 'r') as template:
+        with open(targetFile, 'w') as target:
+            for line in template:
+                for find, replace in replaceCases.iteritems():
+                    line = line.replace(find, str(replace))
+                target.write(line)
+
+
+def parseArgs():
+    platform = None
+    setNums = []
+
+    if len(sys.argv) >= 2:
         platform = sys.argv[1]
-    else:
-        platform = 'heracles'
+    if len(sys.argv) >= 2:
+        setNums = sys.argv[2:]
 
-    if platform not in ['heracles', 'dozer']:
-        print 'Only heracles or dozer'
-        exit(1)
+    if platform == 'help':
+        usage()
+        sys.exit(0)
 
-	baseDir = os.path.dirname(os.path.realpath(__file__))
-	blockedTemplate = os.path.join(baseDir, 'blocked_template.cu.template')
-	cachedPlaneTemplate = os.path.join(baseDir, 'cached_plane_shared_mem_template.cu.template')
-    naiveTemplate = os.path.join(baseDir, 'naive_template.cu.template')
+    elif platform == 'clean':
+        if os.path.exists(generatedDirectory()):
+            shutil.rmtree(generatedDirectory())
+
+        print "Cleaned\n"
+        sys.exit(0)
+
+    elif platform is None:
+        usage()
+        sys.exit(1)
+
+    elif platform not in ['heracles', 'dozer', 'hydra']:
+        print "I don't know what \"{platform}\" means\n".format(platform = platform)
+        usage()
+        sys.exit(1)
+
+    return platform, setNums
+
+if __name__ == '__main__':
+    platform, setNums = parseArgs()
 
     binaries = []
     makefileCases = ""
 
-    for setName, instances in cases.iteritems():
-        for caseName, case in instances.iteritems():
-            name = setName + '_' + caseName
-            blockedTarget = os.path.join(baseDir, name + '_blocked.cu')
-            naiveTarget = os.path.join(baseDir, name + '_naive.cu')
-            blockedOutfile = os.path.join(baseDir, name + '_blocked')
-            naiveOutfile = os.path.join(baseDir, name + '_naive')
-            cachedPlaneTarget = os.path.join(baseDir, name + '_naive.cu')
-            cachedPlaneOutfile = os.path.join(baseDir, name + '_blocked')
+    if not os.path.exists(generatedDirectory()):
+        os.mkdir(generatedDirectory())
 
-            if platform == 'heracles':
-                makefileCases += heraclesMakefileCaseTemplate.format(**{'name': name, 'file': blockedTarget, 'outFile': blockedOutfile})
-                makefileCases += heraclesMakefileCaseTemplate.format(**{'name': name, 'file': naiveTarget, 'outFile': naiveOutfile})
-                makefileCases += heraclesMakefileCaseTemplate.format(**{'name': name, 'file': cachedPlaneTarget, 'outFile': cachedPlaneOutfile})
+    for setName, setData in cases.iteritems():
+        if setData.get('disable', False):
+            continue
 
-            binaries.append(name)
+        if len(setNums) > 0 and setName not in ['Set' + str(setNum) for setNum in setNums]:
+            continue
 
-            replaceCases = {'%%' + k + '%%': v for k, v in case.iteritems()}
-            with open(blockedTemplate, 'r') as template:
-                with open(blockedTarget, 'w') as target:
-                    for line in template:
-                        line = line.strip()
-                        for find, replace in replaceCases.iteritems():
-                            line = line.replace(find, str(replace))
-                        target.write(line)
+        files = setData['files']
+        specs = setData['specs']
+
+        setDir = os.path.join(generatedDirectory(), setName)
+        if not os.path.exists(setDir):
+            os.mkdir(setDir)
+
+        for caseName, case in specs.iteritems():
+            # name = setName + '_' + caseName
+            name = caseName
+
+            for fileData in files:
+                binary = name + fileData['out_suffix']
+                target = os.path.join(setDir, name + fileData['cu_suffix'])
+                outFile = os.path.join(setDir, binary)
+
+                if platform == 'heracles':
+                    makefileCases += heraclesMakefileCaseTemplate.format(
+                        **{'name': binary, 'file': target, 'outFile': outFile})
+
+                binaries.append(binary)
+
+                replaceCases = {'%%' + k + '%%': v for k, v in case.iteritems()}
+                templatePath = os.path.join(baseDirectory(), fileData['template'])
+                writeFileWithReplacements(replaceCases, templatePath, target)
+                # if (os.path.exists(target)):
+                #     tmpFile = os.path.join(setDir, 'tmp.cu')
+                #     writeFileWithReplacements(replaceCases, templatePath, tmpFile)
+                # else:
+                #     writeFileWithReplacements(replaceCases, templatePath, target)
 
     makefileContents = makefileTemplate.format(**{'binaries': str.join(' ', binaries), 'cases': makefileCases})
-    with open(os.path.join(baseDir, 'Makefile'), 'w') as makefile:
+    with open(os.path.join(baseDirectory(), 'Makefile'), 'w') as makefile:
         makefile.write(makefileContents)

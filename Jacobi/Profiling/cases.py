@@ -9,9 +9,26 @@
 #define PER_THREAD_Y %%PER_THREAD_Y%%
 #define PER_THREAD_Z %%PER_THREAD_Z%%
 
-blocked = 'blocked_template.cu.template'
-naive = 'naive_template.cu.template'
-overlapped = 'overlapped_template.cu.template'
+blocked = {
+    'template': 'blocked_template.cu.template',
+    'cu_suffix': '_blocked.cu',
+    'out_suffix': '_blocked',
+}
+cps = {
+    'template': 'cached_plane_shared_mem_template.cu.template',
+    'cu_suffix': '_cached_plane_sweep.cu',
+    'out_suffix': '_cached_plane_sweep',
+}
+naive = {
+    'template': 'naive_template.cu.template',
+    'cu_suffix': '_naive.cu',
+    'out_suffix': '_naive',
+}
+overlapped = {
+    'template': 'overlapped_template.cu.template',
+    'cu_suffix': '_overlapped_tiling.cu',
+    'out_suffix': '_overlapped_tiling',
+}
 
 cases = {
     # SET 1
@@ -295,18 +312,18 @@ cases = {
                 'PER_THREAD_Y': 8,
                 'PER_THREAD_Z': 8,
             },
-            '16Comps': {
-                'DIMENSIONS': 3,
-                'ITERATIONS': 1024,
-                'SIZE': 1024,
-                'TILE_WIDTH': 32,
-                'TILE_HEIGHT': 32,
-                'TILE_DEPTH': 1,
-                'TILE_AGE': 1,
-                'PER_THREAD_X': 16,
-                'PER_THREAD_Y': 16,
-                'PER_THREAD_Z': 16,
-            },
+            # '16Comps': {
+            #     'DIMENSIONS': 3,
+            #     'ITERATIONS': 1024,
+            #     'SIZE': 1024,
+            #     'TILE_WIDTH': 32,
+            #     'TILE_HEIGHT': 32,
+            #     'TILE_DEPTH': 1,
+            #     'TILE_AGE': 1,
+            #     'PER_THREAD_X': 16,
+            #     'PER_THREAD_Y': 16,
+            #     'PER_THREAD_Z': 16,
+            # },
         },
     },
     # SET 4
@@ -387,18 +404,21 @@ cases = {
     # Computations per core: 4
     # Age: Variable
     'Set5': {
+        'disable': true,
         'files': [overlapped],
         'specs': {
-            'DIMENSIONS': 3,
-            'ITERATIONS': 1024,
-            'SIZE': 1024,
-            'TILE_WIDTH': 32,
-            'TILE_HEIGHT': 32,
-            'TILE_DEPTH': 1,
-            'TILE_AGE': 2,
-            'PER_THREAD_X': 4,
-            'PER_THREAD_Y': 4,
-            'PER_THREAD_Z': 4,
+            'TODO': {
+                'DIMENSIONS': 3,
+                'ITERATIONS': 1024,
+                'SIZE': 1024,
+                'TILE_WIDTH': 32,
+                'TILE_HEIGHT': 32,
+                'TILE_DEPTH': 1,
+                'TILE_AGE': 2,
+                'PER_THREAD_X': 4,
+                'PER_THREAD_Y': 4,
+                'PER_THREAD_Z': 4,
+            }
         },
     },
 }
