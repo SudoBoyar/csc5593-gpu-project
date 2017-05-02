@@ -1214,10 +1214,10 @@ void callKernel(Args args, Matrix A, Matrix B) {
 
 // Data output
 void print_data(float *data, int size, int dimensions) {
-    if (size > 32) {
-        cerr << "Data too big to print\n" << endl;
-        return;
-    }
+//    if (size > 32) {
+//        cerr << "Data too big to print\n" << endl;
+//        return;
+//    }
 
     if (dimensions == 1) {
         for (int x = 0; x < size; x++) {

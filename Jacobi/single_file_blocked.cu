@@ -285,8 +285,8 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
  * CUDA KERNELS *
  ****************/
 
-#define TILE_WIDTH 4
-#define TILE_HEIGHT 2
+#define TILE_WIDTH 64
+#define TILE_HEIGHT 8
 #define TILE_DEPTH 2
 #define PER_THREAD_X 2
 #define PER_THREAD_Y 2
@@ -716,7 +716,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
 
         for (int t = 0; t < args.iterations; t++) {
             jacobi1d<<<blocks, threads>>>(deviceA, deviceB);
-            checkCUDAError("jacobi1d", true);
+//            checkCUDAError("jacobi1d", true);
             swap(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
@@ -737,16 +737,15 @@ void callKernel(Args args, Matrix A, Matrix B) {
         }
     }
 
-    printf("%d %d %d %d %d %d\n", A.width, A.height, A.depth, B.width, B.height, B.depth);
     HANDLE_ERROR(cudaMemcpy(B.elements, deviceA.elements, A.width * A.height * A.depth * sizeof(float), cudaMemcpyDeviceToHost));
 }
 
 // Data output
 void print_data(float *data, int size, int dimensions) {
-    if (size > 32) {
-        cerr << "Data too big to print\n" << endl;
-        return;
-    }
+//    if (size > 32) {
+//        cerr << "Data too big to print\n" << endl;
+//        return;
+//    }
 
     if (dimensions == 1) {
         for (int x = 0; x < size; x++) {
