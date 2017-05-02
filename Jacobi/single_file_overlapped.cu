@@ -1184,7 +1184,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
 
     if (args.dimensions == 1) {
         dim3 blocks(max(args.size / TILE_WIDTH, 1));
-        dim3 threads(TILE_WIDTH / PER_THREAD_X);
+        dim3 threads(max(TILE_WIDTH / PER_THREAD_X, 1));
 
         for (int t = 0; t < args.iterations / TILE_AGE; t++) {
             jacobi1d<<<blocks, threads>>>(deviceA, deviceB);
@@ -1193,7 +1193,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
         }
     } else if (args.dimensions == 2) {
         dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1));
-        dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y);
+        dim3 threads(max(TILE_WIDTH / PER_THREAD_X, 1), max(TILE_HEIGHT / PER_THREAD_Y, 1));
         for (int t = 0; t < args.iterations / TILE_AGE; t++) {
             jacobi2d<<<blocks, threads>>>(deviceA, deviceB);
 //            checkCUDAError("jacobi2d", true);
@@ -1201,7 +1201,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
         }
     } else {
         dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1), max(args.size / TILE_DEPTH, 1));
-        dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y, TILE_DEPTH / PER_THREAD_Z);
+        dim3 threads(max(TILE_WIDTH / PER_THREAD_X, 1), max(TILE_HEIGHT / PER_THREAD_Y, 1), max(TILE_DEPTH / PER_THREAD_Z, 1));
         for (int t = 0; t < args.iterations / TILE_AGE; t++) {
             jacobi3d<<<blocks, threads>>>(deviceA, deviceB);
 //            checkCUDAError("jacobi3d", true);
