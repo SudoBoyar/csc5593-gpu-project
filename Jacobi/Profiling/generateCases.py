@@ -17,6 +17,17 @@ heraclesMakefileCaseTemplate = """
 	ssh node18 nvcc {file} -o {outFile}
 """
 
+bashRunFileTemplate = """
+#!/bin/bash
+echo "{name}"
+{commands}
+"""
+
+heraclesRunTemplate = """
+echo "{name}"
+ssh node18 {outPath}
+"""
+
 def usage():
     print "python generateCases.py [option] [setIndex [setIndex...]]"
     print "\tOptions:"
@@ -101,9 +112,14 @@ if __name__ == '__main__':
         if not os.path.exists(setDir):
             os.mkdir(setDir)
 
+        setRunFile = os.path.join(setDir, 'run' + setName + '.sh')
+        setRunCommands = ''
+
         for caseName, case in specs.iteritems():
-            # name = setName + '_' + caseName
             name = caseName
+
+            caseRunFile = os.path.join(setDir, 'run' + name + '.sh')
+            caseRunCommands = ''
 
             for fileData in files:
                 binary = name + fileData['out_suffix']
@@ -113,6 +129,9 @@ if __name__ == '__main__':
                 if platform == 'heracles':
                     makefileCases += heraclesMakefileCaseTemplate.format(
                         **{'name': binary, 'file': target, 'outFile': outFile})
+
+                    setRunCommands += heraclesRunTemplate.format(name=binary, outPath = outFile)
+                    caseRunCommands += heraclesRunTemplate.format(name=binary, outPath = outFile)
 
                 binaries.append(binary)
 
@@ -124,6 +143,16 @@ if __name__ == '__main__':
                 #     writeFileWithReplacements(replaceCases, templatePath, tmpFile)
                 # else:
                 #     writeFileWithReplacements(replaceCases, templatePath, target)
+
+            runscriptContents = bashRunFileTemplate.format(commands=caseRunCommands, name=name)
+            with open(caseRunFile, 'w') as runscript:
+                runscript.write(runscriptContents)
+                os.fchmod(runscript.fileno(), 744)
+
+        runscriptContents = bashRunFileTemplate.format(commands=setRunCommands, name=setName)
+        with open(setRunFile, 'w') as runscript:
+            runscript.write(runscriptContents)
+            os.fchmod(runscript.fileno(), 744)
 
     makefileContents = makefileTemplate.format(**{'binaries': str.join(' ', binaries), 'cases': makefileCases})
     with open(os.path.join(baseDirectory(), 'Makefile'), 'w') as makefile:
