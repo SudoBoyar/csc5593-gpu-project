@@ -56,19 +56,6 @@ void cleanupCuda(void) {
  * End CUDA Utilites *
  *********************/
 
-struct Args {
-	bool debug;
-	bool sequential;
-	bool blocked;
-	bool overlapped;
-	// Data attributes
-	int size, dimensions, alloc_size;
-	int xSize, ySize, zSize;
-	int xBlockSize, yBlockSize, zBlockSize, tBlockSize;
-	// Run attributes
-	int grid_size, block_count, thread_count, iterations;
-};
-
 typedef struct {
 	int dimensions;
 	int height;
@@ -229,7 +216,7 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 //					printf("sharedZ[%d] = %d, sharedY[%d] = %d, sharedX[%d] = %d\n",z,sharedZ[z],y,sharedY[y],x,sharedX[x]); 
 //				}
 		//		printf("(%d,%d,%d): shared[%d][%d][%d] = %d \n", threadIdx.x,threadIdx.y,threadIdx.z,sharedZ[z],sharedZ[z],sharedZ[z],shared[sharedZ[z]][sharedY[y]][sharedX[x]]);
-	//				printf("sharedZ[%d] = %d, sharedY[%d] = %d, sharedX[%d] = %d\n",z,sharedZ[z],y,sharedY[y],x,sharedX[x]); 
+	//				printf("sharedZ[%d] = %d, sharedY[%d] = %d, sharedX[%d] = %d\n",z,sharedZ[z],y,sharedY[y],x,sharedX[x]);
 				shared[sharedZ[z]][sharedY[y]][sharedX[x]] =
 						data.elements[globalIndex[z][y][x]];
 			}
@@ -403,7 +390,7 @@ Matrix initialize_device(Matrix A, bool copyToDevice) {
 	return deviceA;
 }
 
-void callKernel(Args args, Matrix A, Matrix B) {
+void callKernel(Matrix A, Matrix B) {
 	Matrix deviceA, deviceB;
 
 	deviceA = initialize_device(A, true);
@@ -462,7 +449,6 @@ void print_data(float *data, int size, int dimensions) {
 
 // Main
 int main(int argc, char *argv[]) {
-	Args args = parse_arguments(argc, argv);
     float runtime;
     struct timeval start, end;
 	Matrix A, B;
@@ -471,13 +457,12 @@ int main(int argc, char *argv[]) {
 
 	atexit(cleanupCuda);
 
-	//if (args.debug) { print_data(data, args.size, args.dimensions); }
     gettimeofday( &start, NULL );
-	callKernel(args, A, B);
+	callKernel(A, B);
     gettimeofday( &end, NULL );
     runtime = ( ( end.tv_sec  - start.tv_sec ) * 1000.0 ) + ( ( end.tv_usec - start.tv_usec ) / 1000.0 );
     printf( "Processing Time: %4.4f milliseconds\n", runtime );
-	if (args.debug) {
-		print_data(B.elements, SIZE, args.dimensions);
-	}
+//	if (true) {
+//		print_data(B.elements, SIZE, DIMENSIONS);
+//	}
 }
