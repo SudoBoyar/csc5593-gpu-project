@@ -265,8 +265,8 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
     return data;
 }
 
-#define TILE_WIDTH 8
-#define TILE_HEIGHT 8
+#define TILE_WIDTH 32
+#define TILE_HEIGHT 32
 
 __global__ void cached_plane(Matrix data, Matrix result, int z_size) {
     int threadDep = threadIdx.z;

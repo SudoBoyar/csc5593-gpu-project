@@ -247,12 +247,12 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth =
  * CUDA KERNELS *
  ****************/
 
-#define TILE_WIDTH 2 
-#define TILE_HEIGHT 2 
-#define TILE_DEPTH 4 
+#define TILE_WIDTH 32
+#define TILE_HEIGHT 32
+#define TILE_DEPTH 8
 #define PER_THREAD_X 1
 #define PER_THREAD_Y 1
-#define PER_THREAD_Z 4 
+#define PER_THREAD_Z 8
 
 __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 	int threadCol = threadIdx.x;
