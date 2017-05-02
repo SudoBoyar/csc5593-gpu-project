@@ -284,13 +284,13 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
  * CUDA KERNELS *
  ****************/
 
-#define TILE_WIDTH 4
-#define TILE_HEIGHT 4
-#define TILE_DEPTH 4
+#define TILE_WIDTH 64
+#define TILE_HEIGHT 8
+#define TILE_DEPTH 2
 #define TILE_AGE 2
-#define PER_THREAD_X 1
+#define PER_THREAD_X 2
 #define PER_THREAD_Y 2
-#define PER_THREAD_Z 4
+#define PER_THREAD_Z 2
 #define BLOCK_DIM_X TILE_WIDTH/PER_THREAD_X
 #define BLOCK_DIM_Y TILE_HEIGHT/PER_THREAD_Y
 #define BLOCK_DIM_Z TILE_DEPTH/PER_THREAD_Z
