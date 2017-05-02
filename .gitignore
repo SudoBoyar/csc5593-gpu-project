@@ -1,5 +1,5 @@
 
-Jacobi/BlockedProfiling/Set*
+Jacobi/BlockedProfiling/generated/*
 Jacobi/BlockedProfiling/Makefile
 
 ### CUDA template
