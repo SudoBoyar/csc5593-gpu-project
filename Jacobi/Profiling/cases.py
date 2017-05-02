@@ -15,7 +15,7 @@ blocked = {
     'out_suffix': '_blocked',
 }
 cps = {
-    'template': 'cached_plane_shared_mem_template.cu.template',
+    'template': 'cached_plane_shared_mem.cu.template',
     'cu_suffix': '_cached_plane_sweep.cu',
     'out_suffix': '_cached_plane_sweep',
 }
