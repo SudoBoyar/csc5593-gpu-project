@@ -356,7 +356,6 @@ __global__ void cached_plane_shared_mem(Matrix data, Matrix result) {
 		}
 	}
 
-//	printf("here 75\n");
 	// Copy below-block dependencies into shared memory
 	if (threadRow == 0 && blockRow > 0) {
 #pragma unroll
