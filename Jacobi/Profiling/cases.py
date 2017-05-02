@@ -404,7 +404,7 @@ cases = {
     # Computations per core: 4
     # Age: Variable
     'Set5': {
-        'disable': true,
+        'disable': True,
         'files': [overlapped],
         'specs': {
             'TODO': {
