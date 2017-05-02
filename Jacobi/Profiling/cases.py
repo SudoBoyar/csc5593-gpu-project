@@ -34,17 +34,17 @@ cases = {
     # SET 1
     # Data Dimensions: Variable
     # Iterations: 1024
-    # Block Dimensions: 32 x 32 x 1
+    # Block Dimensions: 32 x 1 x 1
     # Computations per core: 1
     # Age: 8
     'Set1': {
-        'files': [blocked, naive],
+        'files': [blocked, cps, naive],
         'specs': {
             'DataDim-32': {
                 'DIMENSIONS': 3,
                 'ITERATIONS': 1024,
                 'SIZE': 32,
-                'TILE_WIDTH': 16,
+                'TILE_WIDTH': 32,
                 'TILE_HEIGHT': 1,
                 'TILE_DEPTH': 1,
                 'TILE_AGE': 1,
@@ -57,7 +57,7 @@ cases = {
                 'ITERATIONS': 1024,
                 'SIZE': 64,
                 'TILE_WIDTH': 32,
-                'TILE_HEIGHT': 32,
+                'TILE_HEIGHT': 1,
                 'TILE_DEPTH': 1,
                 'TILE_AGE': 1,
                 'PER_THREAD_X': 1,
@@ -69,7 +69,7 @@ cases = {
                 'ITERATIONS': 1024,
                 'SIZE': 128,
                 'TILE_WIDTH': 32,
-                'TILE_HEIGHT': 32,
+                'TILE_HEIGHT': 1,
                 'TILE_DEPTH': 1,
                 'TILE_AGE': 1,
                 'PER_THREAD_X': 1,
@@ -81,7 +81,7 @@ cases = {
                 'ITERATIONS': 1024,
                 'SIZE': 256,
                 'TILE_WIDTH': 32,
-                'TILE_HEIGHT': 32,
+                'TILE_HEIGHT': 1,
                 'TILE_DEPTH': 1,
                 'TILE_AGE': 1,
                 'PER_THREAD_X': 1,
@@ -93,7 +93,7 @@ cases = {
                 'ITERATIONS': 1024,
                 'SIZE': 512,
                 'TILE_WIDTH': 32,
-                'TILE_HEIGHT': 32,
+                'TILE_HEIGHT': 1,
                 'TILE_DEPTH': 1,
                 'TILE_AGE': 1,
                 'PER_THREAD_X': 1,
@@ -105,7 +105,7 @@ cases = {
                 'ITERATIONS': 1024,
                 'SIZE': 1024,
                 'TILE_WIDTH': 32,
-                'TILE_HEIGHT': 32,
+                'TILE_HEIGHT': 1,
                 'TILE_DEPTH': 1,
                 'TILE_AGE': 1,
                 'PER_THREAD_X': 1,
