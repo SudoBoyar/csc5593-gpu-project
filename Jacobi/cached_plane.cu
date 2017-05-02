@@ -344,7 +344,7 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
     cudaMalloc((void **) &deviceB.elements, sizeB);
 
     cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice);
-    cudaMemcpy(deviceB.elements, B.elements, sizeB, cudaMemcpyHostToDevice);
+//    cudaMemcpy(deviceB.elements, B.elements, sizeB, cudaMemcpyHostToDevice);
 
     int  z_size = args.size;
     dim3 blocks(blockx_dim, blocky_dim, 1);
