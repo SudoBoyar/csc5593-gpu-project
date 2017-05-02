@@ -265,7 +265,11 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
     return data;
 }
 
-__global__ void jacobi3d_naive(Matrix data, Matrix result, int z_size) {
+#define TILE_WIDTH 8
+#define TILE_HEIGHT 8
+#define TILE_DEPTH 4
+
+__global__ void cached_plane(Matrix data, Matrix result, int z_size) {
     int threadDep = threadIdx.z;
     int threadRow = threadIdx.y;
     int threadCol = threadIdx.x;
@@ -330,8 +334,10 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
     deviceB.depth = B.depth;
     deviceB.dimensions = B.dimensions;
     
-    int threadxy_dim = args.thread_count;
-	int blockxy_dim = args.size/threadxy_dim;
+    int threadx_dim = TILE_WIDTH;
+    int thready_dim = TILE_HEIGHT;
+	int blockx_dim = args.size/threadx_dim;
+	int blocky_dim = args.size/thready_dim;
     size_t sizeA = A.width * A.height * A.depth * sizeof(float);
     size_t sizeB = B.width * B.height * B.depth * sizeof(float);
 
@@ -342,11 +348,11 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
     cudaMemcpy(deviceB.elements, B.elements, sizeB, cudaMemcpyHostToDevice);
 
     int  z_size = args.size;
-    dim3 blocks(blockxy_dim, blockxy_dim, 1);
-    dim3 threads( threadxy_dim, threadxy_dim, 1);   
+    dim3 blocks(blockx_dim, blocky_dim, 1);
+    dim3 threads( threadx_dim, thready_dim, 1);
 	for (int t = 0; t < args.iterations; t++) {
 //	   printf("deviceA.width = %d, deviceA.height = %d\n",deviceA.width,deviceA.height);
-	   jacobi3d_naive<<<blocks, threads>>>(deviceA, deviceB, z_size);
+	   cached_plane<<<blocks, threads>>>(deviceA, deviceB, z_size);
 	   swap(deviceA, deviceB);
     }
 
@@ -395,11 +401,7 @@ int main(int argc, char *argv[]) {
     A = initialize_matrix(args.dimensions, args.size, args.size, args.size);
     B = initialize_matrix(args.dimensions, args.size, args.size, args.size);
 
-//    atexit(cleanupCuda);
-
-    //if (args.debug) { print_data(data, args.size, args.dimensions); }
     gettimeofday( &start, NULL ); 
-	printf("before jacobi_naive/n");
     jacobi_naive(args, A, B);
     gettimeofday( &end, NULL ); 
     runtime = ( ( end.tv_sec  - start.tv_sec ) * 1000.0 ) + ( ( end.tv_usec - start.tv_usec ) / 1000.0 );
