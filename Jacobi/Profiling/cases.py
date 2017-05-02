@@ -14,8 +14,13 @@ blocked = {
     'cu_suffix': '_blocked.cu',
     'out_suffix': '_blocked',
 }
-cpsSharedMemory = {
+cpssm = {
     'template': 'cached_plane_shared_mem.cu.template',
+    'cu_suffix': '_cached_plane_sweep_sm.cu',
+    'out_suffix': '_cached_plane_sweep_sm',
+}
+cps = {
+    'template': 'cached_plane.cu.template',
     'cu_suffix': '_cached_plane_sweep.cu',
     'out_suffix': '_cached_plane_sweep',
 }
@@ -38,7 +43,7 @@ cases = {
     # Computations per core: 1
     # Age: 8
     'Set1': {
-        'files': [blocked, cpsSharedMemory, naive],
+        'files': [blocked, cpssm, cps, naive],
         'specs': {
             'DataDim-32': {
                 'DIMENSIONS': 3,
