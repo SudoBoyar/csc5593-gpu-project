@@ -711,7 +711,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
     deviceB = initialize_device(B, false);
 
     if (args.dimensions == 1) {
-        dim3 blocks(max(args.size / TILE_WIDTH));
+        dim3 blocks(max(args.size / TILE_WIDTH, 1));
         dim3 threads(max(TILE_WIDTH / PER_THREAD_X, 1));
 
         for (int t = 0; t < args.iterations; t++) {
