@@ -43,7 +43,7 @@ cases = {
     # Computations per core: 1
     # Age: 8
     'Set1': {
-        'files': [blocked, cpssm, csp, naive],
+        'files': [blocked, cpssm, cps, naive],
         'specs': {
             'DataDim-32': {
                 'DIMENSIONS': 3,
