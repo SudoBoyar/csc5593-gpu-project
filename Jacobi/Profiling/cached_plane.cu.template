@@ -197,7 +197,7 @@ __global__ void cached_plane(Matrix data, Matrix result, int z_size) {
     }
 }
 
-void jacobi_naive(Args args, Matrix A, Matrix B) {
+void jacobi_naive(Matrix A, Matrix B) {
     Matrix deviceA, deviceB;
     deviceA.width = A.width;
     deviceA.height = A.height;
@@ -277,10 +277,10 @@ int main(int argc, char *argv[]) {
     B = initialize_matrix(DIMENSIONS, SIZE, SIZE, SIZE);
 
     gettimeofday( &start, NULL ); 
-    jacobi_naive(args, A, B);
+    jacobi_naive(A, B);
     gettimeofday( &end, NULL ); 
     runtime = ( ( end.tv_sec  - start.tv_sec ) * 1000.0 ) + ( ( end.tv_usec - start.tv_usec ) / 1000.0 );
     printf( "Processing Time: %4.4f milliseconds\n", runtime );
-	if (args.debug) { print_data(B.elements, SIZE, DIMENSIONS); }
+//	print_data(B.elements, SIZE, DIMENSIONS); 
 	
 }
