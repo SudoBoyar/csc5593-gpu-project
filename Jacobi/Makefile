@@ -1,5 +1,5 @@
 CC=g++
-BINARIES=jacobi_seq naive_gpu blocked_gpu overlapped_gpu
+BINARIES=jacobi_seq naive_gpu blocked_gpu overlapped_gpu cps_gpu cpssm_gpu
 
 TARGET_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
