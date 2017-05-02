@@ -268,7 +268,7 @@ void print_data(float *data, int size, int dimensions) {
 }
 
 int main(int argc, char *argv[]) {
-    Args args = parse_arguments(argc, argv);
+
     float runtime;
     struct timeval start, end;
     Matrix A, B;
