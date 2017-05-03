@@ -717,17 +717,17 @@ void callKernel(Args args, Matrix A, Matrix B) {
     deviceB = initialize_device(B, false);
 
     if (args.dimensions == 1) {
-        dim3 blocks(args.size / TILE_WIDTH, 1, 1);
-        dim3 threads(TILE_WIDTH / PER_THREAD_X, 1, 1);
+        dim3 blocks(max(args.size / TILE_WIDTH, 1));
+        dim3 threads(max(TILE_WIDTH / PER_THREAD_X, 1));
 
         for (int t = 0; t < args.iterations; t++) {
             jacobi1d<<<blocks, threads>>>(deviceA, deviceB);
-            checkCUDAError("jacobi1d", true);
+//            checkCUDAError("jacobi1d", true);
             swap(deviceA, deviceB);
         }
     } else if (args.dimensions == 2) {
         dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1));
-        dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y);
+        dim3 threads(max(TILE_WIDTH / PER_THREAD_X, 1), max(TILE_HEIGHT / PER_THREAD_Y, 1));
         for (int t = 0; t < args.iterations; t++) {
             jacobi2d<<<blocks, threads>>>(deviceA, deviceB);
 //            checkCUDAError("jacobi2d", true);
@@ -735,7 +735,7 @@ void callKernel(Args args, Matrix A, Matrix B) {
         }
     } else {
         dim3 blocks(max(args.size / TILE_WIDTH, 1), max(args.size / TILE_HEIGHT, 1), max(args.size / TILE_DEPTH, 1));
-        dim3 threads(TILE_WIDTH / PER_THREAD_X, TILE_HEIGHT / PER_THREAD_Y, TILE_DEPTH / PER_THREAD_Z);
+        dim3 threads(max(TILE_WIDTH / PER_THREAD_X, 1), max(TILE_HEIGHT / PER_THREAD_Y, 1), max(TILE_DEPTH / PER_THREAD_Z, 1));
         for (int t = 0; t < args.iterations; t++) {
             jacobi3d<<<blocks, threads>>>(deviceA, deviceB);
 //            checkCUDAError("jacobi3d", true);
@@ -743,16 +743,15 @@ void callKernel(Args args, Matrix A, Matrix B) {
         }
     }
 
-    printf("%d %d %d %d %d %d\n", A.width, A.height, A.depth, B.width, B.height, B.depth);
     HANDLE_ERROR(cudaMemcpy(B.elements, deviceA.elements, A.width * A.height * A.depth * sizeof(float), cudaMemcpyDeviceToHost));
 }
 
 // Data output
 void print_data(float *data, int size, int dimensions) {
-    if (size > 32) {
-        cerr << "Data too big to print\n" << endl;
-        return;
-    }
+//    if (size > 32) {
+//        cerr << "Data too big to print\n" << endl;
+//        return;
+//    }
 
     if (dimensions == 1) {
         for (int x = 0; x < size; x++) {

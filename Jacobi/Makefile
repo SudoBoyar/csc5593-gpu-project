@@ -1,5 +1,5 @@
 CC=g++
-BINARIES=jacobi_seq naive_gpu blocked_gpu overlapped_gpu
+BINARIES=jacobi_seq naive_gpu blocked_gpu overlapped_gpu cps_gpu cpssm_gpu
 
 TARGET_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
@@ -16,6 +16,12 @@ blocked_gpu: $(TARGET_DIR)/single_file_blocked.cu
 
 overlapped_gpu: $(TARGET_DIR)/single_file_overlapped.cu
 	ssh node18 nvcc -std=c++11 $(TARGET_DIR)/single_file_overlapped.cu -o $(TARGET_DIR)/overlapped_gpu
+
+cps_gpu: $(TARGET_DIR)/cached_plane.cu
+	ssh node18 nvcc -std=c++11 $(TARGET_DIR)/cached_plane.cu -o $(TARGET_DIR)/cps_gpu
+
+cpssm_gpu: $(TARGET_DIR)/cached_plane_shared_mem.cu
+	ssh node18 nvcc -std=c++11 $(TARGET_DIR)/cached_plane_shared_mem.cu -o $(TARGET_DIR)/cpssm_gpu
 
 clean:
 	rm -f $(BINARIES)
