@@ -22,9 +22,10 @@ The Naive, Blocked, and Overlapped Tiling algorithms can be run for 1, 2, or 3 d
 Both versions of the Cached Plane Sweep algorithm can only be run in 3 dimensions.  
 All of our data was gathered using only the 3 dimensional versions.
 
-There are run scripts provided to run all of the benchmarks on hydra and heracles.
+There are run scripts provided to run all of the benchmarks on heracles and hydra. 
+They are self contained and will simply run their full suite of tests.
 
-### Custom Configurations
+#### Custom Configurations
 
 There are additional values defined in the files that affect their behavior.
 
