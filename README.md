@@ -36,7 +36,7 @@ or
 
 ```shell
 cd my/path/to/project/Jacobi
-chmod 755 heracles_tests.sh
+chmod 755 hydra_tests.sh
 ./hydra_tests.sh
 ```
 
