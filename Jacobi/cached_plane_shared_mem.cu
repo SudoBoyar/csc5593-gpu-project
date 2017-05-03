@@ -16,12 +16,12 @@ using namespace std;
  */
 
 
-#define TILE_WIDTH 2
-#define TILE_HEIGHT 2
-#define TILE_DEPTH 4
+#define TILE_WIDTH 32
+#define TILE_HEIGHT 4
+#define TILE_DEPTH 1
 #define PER_THREAD_X 1
 #define PER_THREAD_Y 1
-#define PER_THREAD_Z 4
+#define PER_THREAD_Z 1
 
 /*****************
  * CUDA Utilites *
