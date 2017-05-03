@@ -11,6 +11,14 @@
 #define HANDLE_ERROR(err)  ( HandleError( err, __FILE__, __LINE__ ) )
 #define MAX_THREADS (65536 * 1024)
 
+
+/**
+ * DEFINED VALUES HERE
+ */
+
+#define TILE_WIDTH 8
+#define TILE_HEIGHT 8
+
 using namespace std;
 
 void HandleError(cudaError_t err, const char *file, int line) {
@@ -264,9 +272,6 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
 
     return data;
 }
-
-#define TILE_WIDTH 32
-#define TILE_HEIGHT 32
 
 __global__ void cached_plane(Matrix data, Matrix result, int z_size) {
     int threadDep = threadIdx.z;
