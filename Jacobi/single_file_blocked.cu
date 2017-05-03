@@ -11,6 +11,19 @@ using namespace std;
 // Shorthand for handling CUDA errors.
 #define HANDLE_ERROR(err)  ( HandleError( err, __FILE__, __LINE__ ) )
 
+/**
+ * DEFINED VALUES HERE
+ */
+
+
+#define TILE_WIDTH 32
+#define TILE_HEIGHT 32
+#define TILE_DEPTH 1
+#define PER_THREAD_X 2
+#define PER_THREAD_Y 2
+#define PER_THREAD_Z 1
+
+
 /*****************
  * CUDA Utilites *
  *****************/
@@ -284,13 +297,6 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
 /****************
  * CUDA KERNELS *
  ****************/
-
-#define TILE_WIDTH 4
-#define TILE_HEIGHT 2
-#define TILE_DEPTH 2
-#define PER_THREAD_X 2
-#define PER_THREAD_Y 2
-#define PER_THREAD_Z 2
 
 __global__ void jacobi1d(Matrix data, Matrix result) {
     int threadCol = threadIdx.x;
