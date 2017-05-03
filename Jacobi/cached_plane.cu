@@ -401,7 +401,7 @@ int main(int argc, char *argv[]) {
     float runtime;
     struct timeval start, end;
     Matrix A, B;
-	printf("before initialize\n");
+
     A = initialize_matrix(args.dimensions, args.size, args.size, args.size);
     B = initialize_matrix(args.dimensions, args.size, args.size, args.size);
 
