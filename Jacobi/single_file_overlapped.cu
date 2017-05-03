@@ -15,12 +15,12 @@ using namespace std;
  * DEFINED VALUES HERE
  */
 
-#define TILE_WIDTH 32
-#define TILE_HEIGHT 1
+#define TILE_WIDTH 64
+#define TILE_HEIGHT 8
 #define TILE_DEPTH 1
-#define TILE_AGE 4
-#define PER_THREAD_X 1
-#define PER_THREAD_Y 1
+#define TILE_AGE 2
+#define PER_THREAD_X 2
+#define PER_THREAD_Y 2
 #define PER_THREAD_Z 1
 
 

@@ -16,8 +16,8 @@ using namespace std;
  */
 
 
-#define TILE_WIDTH 32
-#define TILE_HEIGHT 32
+#define TILE_WIDTH 64
+#define TILE_HEIGHT 8
 #define TILE_DEPTH 1
 #define PER_THREAD_X 2
 #define PER_THREAD_Y 2
