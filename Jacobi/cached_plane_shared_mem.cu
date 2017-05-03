@@ -594,7 +594,7 @@ int main(int argc, char *argv[]) {
 	A = initialize_matrix(args.dimensions, args.size, args.size, args.size);
 	B = initialize_matrix(args.dimensions, args.size, args.size, args.size);
 
-	atexit(cleanupCuda);
+//	atexit(cleanupCuda);
 
 	//if (args.debug) { print_data(data, args.size, args.dimensions); }
     gettimeofday( &start, NULL );
