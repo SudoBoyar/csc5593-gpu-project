@@ -25,7 +25,7 @@ All of our data was gathered using only the 3 dimensional versions.
 There are run scripts provided to run all of the benchmarks on heracles and hydra. 
 They are self contained and will simply run their full suite of tests.
 
-They can be run by running
+After running the appropriate make command, they can be run by running:
 ```shell
 cd my/path/to/project/Jacobi
 chmod 755 heracles_tests.sh
