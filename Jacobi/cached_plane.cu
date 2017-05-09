@@ -272,7 +272,10 @@ Matrix initialize_matrix(int dimensions, int width, int height = 1, int depth = 
 
     return data;
 }
-
+//
+// Cached plane algorithm that calculates all the results for the thread plane from 0 to the end of the
+// block of global data.
+//
 __global__ void cached_plane(Matrix data, Matrix result, int z_size) {
     int threadDep = threadIdx.z;
     int threadRow = threadIdx.y;
@@ -292,7 +295,6 @@ __global__ void cached_plane(Matrix data, Matrix result, int z_size) {
 
 	float newValue;
     
-//	printf("z=%d, x+y+z = %d\n",x,y,z,x+y+z);
     while(z < z_size){
 		zTemp = z * xySurface;
 		index = x + yTemp + zTemp; // x + y * data.width + z * data.width * data.height;
@@ -302,7 +304,6 @@ __global__ void cached_plane(Matrix data, Matrix result, int z_size) {
 		yNext = x + yTemp + data.width + zTemp; // x + (y+1) * data.width + z * data.width * data.height;
 		zPrev = x + yTemp + zTemp - xySurface; // x + y * data.width + (z-1) * data.width * data.height;
 		zNext = x + yTemp + zTemp + xySurface; // x + y * data.width + (z+1) * data.width * data.height;
-//		printf("x=%d, y=%d, z=%d, x+y+z = %d\n",x,y,z,x+y+z);
 		if (x > 0 && x < data.width - 1 && y > 0 && y < data.height - 1 && z > 0 && z < data.depth - 1) {
 			newValue =
 			(
@@ -316,16 +317,18 @@ __global__ void cached_plane(Matrix data, Matrix result, int z_size) {
 				) / 7;
 			__syncthreads();
 			result.elements[index] = newValue;
-//			printf("x+y+z = %d and result = %f\n",x+y+z,result.elements[index]);
 		} else {
         // Edge or beyond, do not change.
            __syncthreads();
 		}
-	//	printf("blockDim.x = %d, gridDim.x = %d\n",blockDim.x,gridDim.x);
 		z += 1;
     }
 }
 
+//
+// Allocate the data arrays and copy the data arrays we need for the Jacobi to
+// the GPU
+//
 void jacobi_naive(Args args, Matrix A, Matrix B) {
     Matrix deviceA, deviceB;
     deviceA.width = A.width;
@@ -349,20 +352,16 @@ void jacobi_naive(Args args, Matrix A, Matrix B) {
     cudaMalloc((void **) &deviceB.elements, sizeB);
 
     cudaMemcpy(deviceA.elements, A.elements, sizeA, cudaMemcpyHostToDevice);
-//    cudaMemcpy(deviceB.elements, B.elements, sizeB, cudaMemcpyHostToDevice);
 
     int  z_size = args.size;
     dim3 blocks(blockx_dim, blocky_dim, 1);
     dim3 threads( threadx_dim, thready_dim, 1);
 	for (int t = 0; t < args.iterations; t++) {
-//	   printf("deviceA.width = %d, deviceA.height = %d\n",deviceA.width,deviceA.height);
 	   cached_plane<<<blocks, threads>>>(deviceA, deviceB, z_size);
 	   swap(deviceA, deviceB);
     }
 
     cudaMemcpy(B.elements, deviceA.elements, sizeA, cudaMemcpyDeviceToHost);
-//	free(deviceA.elements);
-//	free(deviceB.elements);
 }
 
 void print_data(float *data, int size, int dimensions) {
